@@ -1,6 +1,6 @@
 <div align="center">
 
-# bloxcue
+# BloxCue
 
 <h3>Context blocks for Claude Code. Use what you need, when you need it.</h3>
 
@@ -40,13 +40,13 @@ After using [Continuous-Claude](https://github.com/AnandChowdhary/continuous-cla
 
 **The idea:** What if Claude could pull in just the context it needs, like building blocks? You ask about your database, Claude grabs the database block. You ask about deployment, Claude grabs the deployment block. Everything else stays on the shelf.
 
-That's **bloxcue** - context blocks that get cued up when you need them. More tokens for thinking, less tokens wasted on context you don't need.
+That's **BloxCue** - context blocks that get cued up when you need them. More tokens for thinking, less tokens wasted on context you don't need.
 
 ---
 
 ## Who is this for?
 
-| If you're... | bloxcue helps you... |
+| If you're... | BloxCue helps you... |
 |--------------|----------------------|
 | **A Claude Code user** | Stop burning tokens on context you're not using |
 | **Managing multiple configs** | Keep docs, guides, and configs organized and searchable |
@@ -58,7 +58,7 @@ That's **bloxcue** - context blocks that get cued up when you need them. More to
 
 ## How it works (simple version)
 
-**Before bloxcue:**
+**Before BloxCue:**
 ```
 You: "How do I deploy to production?"
 
@@ -72,7 +72,7 @@ Claude loads: ENTIRE CLAUDE.md (34KB = ~8,500 tokens)
 Result: ~8,500 tokens loaded, only ~800 were relevant
 ```
 
-**After bloxcue:**
+**After BloxCue:**
 ```
 You: "How do I deploy to production?"
 
@@ -91,16 +91,16 @@ Saved: ~7,700 tokens for thinking & coding
 
 ### You need Continuous-Claude first
 
-bloxcue works best **alongside** Continuous-Claude. They're complementary tools that make Claude Code significantly more powerful.
+BloxCue works best **alongside** Continuous-Claude. They're complementary tools that make Claude Code significantly more powerful.
 
 | Tool | What it does |
 |------|--------------|
 | **Continuous-Claude** | Helps Claude remember across sessions (ledgers, handoffs, learnings) |
-| **bloxcue** | Reduces token waste by loading context on-demand |
+| **BloxCue** | Reduces token waste by loading context on-demand |
 
 **Think of it this way:**
 - Continuous-Claude = Claude's **memory** (what to remember)
-- bloxcue = Claude's **filing cabinet** (where to find it efficiently)
+- BloxCue = Claude's **filing cabinet** (where to find it efficiently)
 
 **The easiest way to get started:** Let Claude set up both tools for you! See the Quick Start section below.
 
@@ -114,18 +114,18 @@ If you prefer manual setup, follow our [Continuous-Claude Installation Guide](ht
 
 ### The Easy Way (Recommended)
 
-**Let Claude handle the entire setup for you!** This is the smoothest experience - Claude will install both Continuous-Claude and bloxcue, configure everything, and make sure they work together seamlessly.
+**Let Claude handle the entire setup for you!** This is the smoothest experience - Claude will install both Continuous-Claude and BloxCue, configure everything, and make sure they work together seamlessly.
 
 Copy and paste this to Claude:
 
 ```
-I'd like you to set up my Claude Code environment with Continuous-Claude and bloxcue for better context management.
+I'd like you to set up my Claude Code environment with Continuous-Claude and BloxCue for better context management.
 
 Please:
 1. First, install Continuous-Claude from https://github.com/bokiko/continuous-claude-guide
    - Follow the setup instructions in that repo
 
-2. Then, install bloxcue from https://github.com/bokiko/bloxcue
+2. Then, install BloxCue from https://github.com/bokiko/bloxcue
    - Clone the repo and run the installer
    - Ask me which setup I prefer:
      * Global (~/.claude-memory) - for personal docs I use across projects
@@ -143,7 +143,7 @@ Please:
 
 Claude will:
 - Install and configure Continuous-Claude
-- Install bloxcue with your preferences
+- Install BloxCue with your preferences
 - Ask you about your preferred setup (global/project/both)
 - Help you choose the right organization and categories
 - Configure auto-retrieval hooks
@@ -162,7 +162,7 @@ If you prefer to control every step, here's the manual installation:
 
 Follow our [Continuous-Claude Installation Guide](https://github.com/bokiko/continuous-claude-guide).
 
-#### Step 1: Clone bloxcue
+#### Step 1: Clone BloxCue
 
 ```bash
 git clone https://github.com/bokiko/bloxcue.git
@@ -260,7 +260,7 @@ You should see your deployment guide in the results!
 
 ## Enable Auto-Retrieval
 
-**This step is required for bloxcue to work automatically.** The installer handles this, but if you need to set it up manually:
+**This step is required for BloxCue to work automatically.** The installer handles this, but if you need to set it up manually:
 
 ### Add the hook to settings.json
 
@@ -313,7 +313,7 @@ Tell Claude:
 
 ```
 I have an existing CLAUDE.md file that's gotten too big.
-Help me migrate it to bloxcue by:
+Help me migrate it to BloxCue by:
 1. Reading my current CLAUDE.md
 2. Identifying distinct topics
 3. Creating separate block files for each topic
@@ -344,7 +344,7 @@ Claude automatically retrieves relevant context via hooks.
 
 Starting fresh? Even easier:
 
-1. Let Claude install Continuous-Claude + bloxcue (see Quick Start)
+1. Let Claude install Continuous-Claude + BloxCue (see Quick Start)
 2. Start with a minimal CLAUDE.md
 3. Add blocks as you go
 
@@ -356,7 +356,7 @@ Your CLAUDE.md stays small forever because everything goes into blocks.
 
 Real numbers from actual usage:
 
-| Metric | Before bloxcue | After bloxcue | Saved |
+| Metric | Before BloxCue | After BloxCue | Saved |
 |--------|----------------|---------------|-------|
 | Tokens per prompt | ~8,500 | ~1,000 | **~7,500 tokens** |
 | Tokens per session (20 prompts) | ~170,000 | ~20,000 | **~150,000 tokens** |
@@ -438,7 +438,7 @@ python3 ~/.claude-memory/scripts/indexer.py --rebuild
 <details>
 <summary><strong>Do I need Continuous-Claude to use this?</strong></summary>
 
-Technically no, but we strongly recommend it. Continuous-Claude handles session memory (remembering what you were working on), while bloxcue handles knowledge retrieval (finding the right docs). They complement each other perfectly.
+Technically no, but we strongly recommend it. Continuous-Claude handles session memory (remembering what you were working on), while BloxCue handles knowledge retrieval (finding the right docs). They complement each other perfectly.
 
 Without Continuous-Claude, you'll save tokens but lose the session continuity features.
 </details>
@@ -457,7 +457,7 @@ Two key differences:
 1. **Scalability** - Your knowledge can grow without growing your token usage
 2. **Relevance** - Only the blocks relevant to your current question get loaded
 
-A smaller CLAUDE.md means less information available. bloxcue means the right information available at the right time.
+A smaller CLAUDE.md means less information available. BloxCue means the right information available at the right time.
 </details>
 
 <details>
@@ -488,7 +488,7 @@ They're just markdown files! Back them up however you back up other files:
 <details>
 <summary><strong>Can I disable auto-retrieval?</strong></summary>
 
-Yes, just remove the hook from your `~/.claude/settings.json`. But we recommend keeping it on - that's the whole point of bloxcue!
+Yes, just remove the hook from your `~/.claude/settings.json`. But we recommend keeping it on - that's the whole point of BloxCue!
 </details>
 
 ---
