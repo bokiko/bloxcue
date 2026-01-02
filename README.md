@@ -30,6 +30,26 @@
 
 ---
 
+## Table of Contents
+
+1. [The Story](#the-story)
+2. [Who is this for?](#who-is-this-for)
+3. [How it works](#how-it-works-simple-version)
+4. [Requirements](#requirements)
+5. [Quick Start](#quick-start) (Let Claude install it!)
+6. [Enable Auto-Retrieval](#enable-auto-retrieval)
+7. [For Existing Claude Users](#for-existing-claude-users)
+8. [Token Savings](#token-savings)
+9. [Directory Structure](#directory-structure)
+10. [Commands Reference](#commands-reference)
+11. [Best Practices](#best-practices)
+12. [FAQ](#faq)
+13. [Troubleshooting](#troubleshooting)
+14. [Security](#security)
+15. [Credits](#credits)
+
+---
+
 ## The Story
 
 After using [Continuous-Claude](https://github.com/AnandChowdhary/continuous-claude) (created by [Anand Chowdhary](https://github.com/AnandChowdhary)) for a while, we noticed something: our `CLAUDE.md` files kept growing. Every time we documented something new, added a guide, or saved a configuration... the file got bigger.
@@ -532,6 +552,20 @@ Ideas welcome! Some things we'd love help with:
 - VSCode extension for browsing blocks
 - Web UI for managing your memory
 - Sync across machines
+
+---
+
+## Security
+
+BloxCue is designed with security in mind:
+
+- **Local-only operations** - No network activity, no telemetry
+- **User-controlled data** - All files stay on your machine
+- **Input sanitization** - User prompts are sanitized before processing
+- **Path validation** - Prevents directory traversal attacks
+- **Settings backup** - Creates backup before modifying Claude config
+
+See [SECURITY.md](SECURITY.md) for the full security audit report.
 
 ---
 
