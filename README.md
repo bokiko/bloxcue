@@ -30,6 +30,12 @@
 
 ---
 
+<p align="center">
+  <img src="bloxcue2.jpg" alt="BloxCue - Context blocks for Claude Code" width="600" />
+</p>
+
+---
+
 ## Table of Contents
 
 1. [The Story](#the-story)
