@@ -59,7 +59,7 @@
 
 ## The Story
 
-After using [Continuous-Claude](https://github.com/AnandChowdhary/continuous-claude) (created by [Anand Chowdhary](https://github.com/AnandChowdhary)) for a while, we noticed something: our `CLAUDE.md` files kept growing. Every time we documented something new, added a guide, or saved a configuration... the file got bigger.
+After using [Continuous-Claude](https://github.com/parcadei/Continuous-Claude-v2) (created by [parcadei](https://github.com/parcadei)) for a while, we noticed something: our `CLAUDE.md` files kept growing. Every time we documented something new, added a guide, or saved a configuration... the file got bigger.
 
 **The problem?** Claude loads your entire `CLAUDE.md` on every single prompt. That 30KB file? Loaded 20+ times per session. That's hundreds of thousands of tokens wasted on stuff Claude didn't even need for that prompt.
 
@@ -133,7 +133,7 @@ BloxCue works best **alongside** Continuous-Claude. They're complementary tools 
 
 If you prefer manual setup, follow our [Continuous-Claude Installation Guide](https://github.com/bokiko/continuous-claude-guide) first.
 
-> **Credit:** Continuous-Claude was created by [Anand Chowdhary](https://github.com/AnandChowdhary). Check out his [original repository](https://github.com/AnandChowdhary/continuous-claude).
+> **Credit:** Continuous-Claude was created by [parcadei](https://github.com/parcadei). Check out the [original repository](https://github.com/parcadei/Continuous-Claude-v2).
 
 ---
 
@@ -612,7 +612,7 @@ See [SECURITY.md](SECURITY.md) for the full security audit report.
 
 ## Credits
 
-- [Anand Chowdhary](https://github.com/AnandChowdhary) - Creator of [Continuous-Claude](https://github.com/AnandChowdhary/continuous-claude)
+- [parcadei](https://github.com/parcadei) - Creator of [Continuous-Claude](https://github.com/parcadei/Continuous-Claude-v2)
 
 ---
 
