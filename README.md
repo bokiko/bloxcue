@@ -2,7 +2,7 @@
 
 # BloxCue
 
-<h3>Context blocks for Claude Code. Use what you need, when you need it.</h3>
+<h3>Intelligent context blocks for Claude Code. Load what you need, when you need it.</h3>
 
 <p>
   <a href="https://github.com/bokiko/continuous-claude-guide">
@@ -39,35 +39,67 @@
 ## Table of Contents
 
 1. [The Story](#the-story)
-2. [Who is this for?](#who-is-this-for)
-3. [How it works](#how-it-works-simple-version)
-4. [Requirements](#requirements)
-5. [Quick Start](#quick-start) (Let Claude install it!)
-6. [Enable Auto-Retrieval](#enable-auto-retrieval)
-7. [After Installation](#after-installation) ⚠️ Important!
-8. [For Existing Claude Users](#for-existing-claude-users)
-9. [Token Savings](#token-savings)
-10. [Directory Structure](#directory-structure)
-11. [Commands Reference](#commands-reference)
-12. [Best Practices](#best-practices)
-13. [FAQ](#faq)
-14. [Troubleshooting](#troubleshooting)
-15. [Security](#security)
-16. [Credits](#credits)
+2. [Features](#features)
+3. [Who is this for?](#who-is-this-for)
+4. [How it works](#how-it-works)
+5. [Requirements](#requirements)
+6. [Quick Start](#quick-start)
+7. [Enable Auto-Retrieval](#enable-auto-retrieval)
+8. [After Installation](#after-installation)
+9. [For Existing Claude Users](#for-existing-claude-users)
+10. [Token Savings](#token-savings)
+11. [Directory Structure](#directory-structure)
+12. [Commands Reference](#commands-reference)
+13. [Best Practices](#best-practices)
+14. [FAQ](#faq)
+15. [Troubleshooting](#troubleshooting)
+16. [Security](#security)
+17. [Roadmap](#roadmap)
+18. [Contributing](#contributing)
+19. [Credits](#credits)
 
 ---
 
 ## The Story
 
-After using [Continuous-Claude](https://github.com/parcadei/Continuous-Claude-v2) (created by [parcadei](https://github.com/parcadei)) for a while, we noticed something: our `CLAUDE.md` files kept growing. Every time we documented something new, added a guide, or saved a configuration... the file got bigger.
+After using [Continuous-Claude](https://github.com/parcadei/Continuous-Claude-v2) (created by [parcadei](https://github.com/parcadei)), we noticed something: our `CLAUDE.md` files kept growing. Every time we documented something new, added a guide, or saved a configuration, the file got bigger.
 
-**The problem?** Claude loads your entire `CLAUDE.md` on every single prompt. That 30KB file? Loaded 20+ times per session. That's hundreds of thousands of tokens wasted on stuff Claude didn't even need for that prompt.
+**The problem?** Claude loads your entire `CLAUDE.md` on every single prompt. That 30KB file? Loaded 20+ times per session. Hundreds of thousands of tokens wasted on content Claude didn't need.
 
-**Why does this matter?** Whether you're on Claude Pro ($20/month) or Pro Max ($200/month), you have a monthly token budget. Wasting thousands of tokens per prompt on irrelevant context means less tokens for actual thinking, coding, and building your projects.
+**Why does this matter?** Whether you're on Claude Pro ($20/month) or Pro Max ($200/month), you have a monthly token budget. Wasting thousands of tokens per prompt on irrelevant context means fewer tokens for actual thinking, coding, and building.
 
-**The idea:** What if Claude could pull in just the context it needs, like building blocks? You ask about your database, Claude grabs the database block. You ask about deployment, Claude grabs the deployment block. Everything else stays on the shelf.
+**The solution:** What if Claude could pull in just the context it needs? You ask about your database, Claude grabs the database block. You ask about deployment, Claude grabs the deployment block. Everything else stays on the shelf.
 
-That's **BloxCue** - context blocks that get cued up when you need them. More tokens for thinking, less tokens wasted on context you don't need.
+That's **BloxCue** - intelligent context blocks that get loaded when you need them.
+
+---
+
+## Features
+
+### Intelligent Search Engine
+
+BloxCue includes a purpose-built search engine optimized for context retrieval:
+
+| Feature | Description |
+|---------|-------------|
+| **Porter Stemmer** | Matches word variations (`running` → `run`, `deployment` → `deploy`) |
+| **IDF Weighting** | Rare terms rank higher than common ones for better precision |
+| **Phrase Matching** | Recognizes multi-word queries like "error handling" as phrases |
+| **Query Intent Detection** | Adjusts results based on query type (how-to, troubleshooting, concepts) |
+| **Fuzzy Matching** | Finds relevant blocks even with typos or partial matches |
+
+### Automatic Context Injection
+
+- Hooks into Claude Code's `UserPromptSubmit` event
+- Analyzes your prompt in real-time
+- Injects only the most relevant blocks as context
+- Zero manual intervention required
+
+### Token Efficiency
+
+- Reduces context loading by ~88%
+- Saves ~7,500 tokens per prompt on average
+- More tokens available for Claude's reasoning
 
 ---
 
@@ -75,7 +107,7 @@ That's **BloxCue** - context blocks that get cued up when you need them. More to
 
 | If you're... | BloxCue helps you... |
 |--------------|----------------------|
-| **A Claude Code user** | Stop burning tokens on context you're not using |
+| **A Claude Code user** | Stop burning tokens on unused context |
 | **Managing multiple configs** | Keep docs, guides, and configs organized and searchable |
 | **Working on several projects** | Switch context without reloading everything |
 | **Hitting token limits** | Save ~7,000 tokens per prompt |
@@ -83,7 +115,7 @@ That's **BloxCue** - context blocks that get cued up when you need them. More to
 
 ---
 
-## How it works (simple version)
+## How it works
 
 **Before BloxCue:**
 ```
@@ -103,10 +135,12 @@ Result: ~8,500 tokens loaded, only ~800 were relevant
 ```
 You: "How do I deploy to production?"
 
+BloxCue: Detects "deploy" + "production" keywords
+         → Finds deployment block via Porter stemmer
+         → IDF weights "production" higher (specific term)
+         → Injects only the deployment block
+
 Claude loads: Just the deployment block (~800 tokens)
-  - Environment setup
-  - Deploy commands
-  - Rollback procedures
 
 Result: ~800 tokens loaded, all relevant
 Saved: ~7,700 tokens for thinking & coding
@@ -116,20 +150,18 @@ Saved: ~7,700 tokens for thinking & coding
 
 ## Requirements
 
-### You need Continuous-Claude first
+### Continuous-Claude (Recommended)
 
-BloxCue works best **alongside** Continuous-Claude. They're complementary tools that make Claude Code significantly more powerful.
+BloxCue works best alongside Continuous-Claude. They're complementary tools:
 
-| Tool | What it does |
-|------|--------------|
-| **Continuous-Claude** | Helps Claude remember across sessions (ledgers, handoffs, learnings) |
-| **BloxCue** | Reduces token waste by loading context on-demand |
+| Tool | Purpose |
+|------|---------|
+| **Continuous-Claude** | Session memory (ledgers, handoffs, learnings) |
+| **BloxCue** | Knowledge retrieval (on-demand context loading) |
 
 **Think of it this way:**
 - Continuous-Claude = Claude's **memory** (what to remember)
 - BloxCue = Claude's **filing cabinet** (where to find it efficiently)
-
-**The easiest way to get started:** Let Claude set up both tools for you! See the Quick Start section below.
 
 If you prefer manual setup, follow our [Continuous-Claude Installation Guide](https://github.com/bokiko/continuous-claude-guide) first.
 
@@ -139,102 +171,70 @@ If you prefer manual setup, follow our [Continuous-Claude Installation Guide](ht
 
 ## Quick Start
 
-### The Easy Way (Recommended)
-
-**Let Claude handle the entire setup for you!** This is the smoothest experience - Claude will install both Continuous-Claude and BloxCue, configure everything, and make sure they work together seamlessly.
+### Option 1: Let Claude Install (Recommended)
 
 Copy and paste this to Claude:
 
 ```
-I'd like you to set up my Claude Code environment with Continuous-Claude and BloxCue for better context management.
+I'd like you to set up my Claude Code environment with Continuous-Claude and BloxCue.
 
 Please:
 1. First, install Continuous-Claude from https://github.com/bokiko/continuous-claude-guide
-   - Follow the setup instructions in that repo
 
 2. Then, install BloxCue from https://github.com/bokiko/bloxcue
    - Clone the repo and run the installer
    - Ask me which setup I prefer:
-     * Global (~/.claude-memory) - for personal docs I use across projects
+     * Global (~/.claude-memory) - for personal docs across projects
      * Project (./claude-memory) - for project-specific docs
      * Both - recommended
-   - Ask me how I want to organize my blocks (by subject, by project, etc.)
-   - Ask me what categories make sense for my work
-   - Set up the auto-retrieval hook in settings.json
+   - Ask me how I want to organize my blocks
+   - Set up the auto-retrieval hook
    - Create a sample block to get me started
 
-3. Verify both tools are working together properly
+3. Verify both tools are working together
 
-4. Give me a quick summary of what was set up and how to use it
+4. Give me a quick summary of what was set up
 ```
 
-Claude will:
-- Install and configure Continuous-Claude
-- Install BloxCue with your preferences
-- Ask you about your preferred setup (global/project/both)
-- Help you choose the right organization and categories
-- Configure auto-retrieval hooks
-- Create your first block
-- Verify everything works together
-
-**That's the recommended approach!** Claude handles all the technical details while customizing the setup to your needs.
+Claude will handle all the technical details while customizing the setup to your needs.
 
 ---
 
-### The Manual Way (Power Users)
+### Option 2: Manual Installation
 
-If you prefer to control every step, here's the manual installation:
-
-#### Step 0: Install Continuous-Claude first
+#### Step 1: Install Continuous-Claude
 
 Follow our [Continuous-Claude Installation Guide](https://github.com/bokiko/continuous-claude-guide).
 
-#### Step 1: Clone BloxCue
+#### Step 2: Clone BloxCue
 
 ```bash
 git clone https://github.com/bokiko/bloxcue.git
 cd bloxcue
 ```
 
-#### Step 2: Run the installer
+#### Step 3: Run the installer
 
 ```bash
 ./install.sh
 ```
 
-The installer will ask you a few simple questions:
+The installer will ask you:
 
-**Question 1: Where to install?**
-- **Global** (`~/.claude-memory`) - for knowledge you use across all projects
-- **Project** (`./claude-memory`) - for project-specific docs only
+**Where to install?**
+- **Global** (`~/.claude-memory`) - knowledge used across all projects
+- **Project** (`./claude-memory`) - project-specific docs only
 - **Both** - recommended for most users
 
-**Question 2: How to organize?**
-- **By subject** - guides, references, projects (best for general use)
-- **By project** - project-a, project-b (best for freelancers/agencies)
+**How to organize?**
+- **By subject** - guides, references, projects (general use)
+- **By project** - project-a, project-b (freelancers/agencies)
 - **Developer** - apis, databases, deployment, frontend, backend
 - **DevOps** - servers, networking, monitoring, security
-- **Minimal** - just docs and notes (simplest option)
+- **Minimal** - just docs and notes
 - **Custom** - you specify
 
-**Question 3: What categories do you need?**
-
-Examples for common use cases:
-
-| Use Case | Suggested Categories |
-|----------|---------------------|
-| **Web Developer** | apis, databases, deployment, frontend, backend |
-| **DevOps/SysAdmin** | servers, networking, monitoring, security |
-| **Data Scientist** | datasets, models, notebooks, pipelines |
-| **Freelancer** | clients, contracts, templates, billing |
-| **Student** | courses, notes, assignments, research |
-| **General** | projects, guides, references, notes |
-
-Pick what makes sense for your work. You can always add more later.
-
-#### Step 3: Add your first block
-
-Create a markdown file in your memory folder. Here's an example:
+#### Step 4: Add your first block
 
 ```bash
 nano ~/.claude-memory/guides/deployment.md
@@ -252,7 +252,6 @@ tags: [deployment, production, devops]
 ## Prerequisites
 - SSH access to production server
 - Environment variables configured
-- Database migrations ready
 
 ## Deploy Steps
 1. Run tests locally
@@ -263,41 +262,36 @@ tags: [deployment, production, devops]
 6. Restart services
 
 ## Rollback
-If something breaks:
 1. Revert to previous commit
 2. Run down migrations
 3. Restart services
 ```
 
-#### Step 4: Index your blocks
+#### Step 5: Index your blocks
 
 ```bash
 python3 ~/.claude-memory/scripts/indexer.py
 ```
 
-#### Step 5: Test it
+#### Step 6: Test it
 
 ```bash
 python3 ~/.claude-memory/scripts/indexer.py --search "deployment"
 ```
 
-You should see your deployment guide in the results!
-
 ---
 
 ## Enable Auto-Retrieval
 
-**This step is required for BloxCue to work automatically.** The installer handles this, but if you need to set it up manually:
+**Required for BloxCue to work automatically.**
 
 ### Add the hook to settings.json
-
-Edit your Claude settings:
 
 ```bash
 nano ~/.claude/settings.json
 ```
 
-Add this to your hooks section:
+Add to your hooks section:
 
 ```json
 {
@@ -314,40 +308,34 @@ Add this to your hooks section:
 
 ### Restart Claude Code
 
-Close and reopen Claude Code for the changes to take effect.
+Close and reopen Claude Code for changes to take effect.
 
 ### Test it
-
-Ask Claude about something you documented:
 
 ```
 You: "How do I deploy to production?"
 ```
 
-Claude will automatically receive your deployment block as context - no manual search needed!
-
-> **Note:** If you used the "Easy Way" setup above, Claude already configured this for you.
+Claude will automatically receive your deployment block as context.
 
 ---
 
 ## After Installation
 
-> ⚠️ **Important:** BloxCue is installed, but you're still wasting tokens until you slim your CLAUDE.md!
+> **Important:** BloxCue is installed, but you're still wasting tokens until you slim your CLAUDE.md!
 
-The installer sets up the hooks and directory structure, but it doesn't automatically migrate your existing CLAUDE.md. If you have a large CLAUDE.md file, you're still loading all that content on every prompt.
-
-**Ask Claude to slim it for you:**
+**Ask Claude to migrate your content:**
 
 ```
 My CLAUDE.md has grown too big. Help me migrate content to BloxCue blocks:
 1. Read my current CLAUDE.md
 2. Identify distinct topics (deployment, APIs, configs, etc.)
 3. Create separate block files in ~/.claude-memory/
-4. Slim my CLAUDE.md to essentials only (project name, stack, minimal context)
+4. Slim my CLAUDE.md to essentials only
 5. Re-index with: python3 ~/.claude-memory/scripts/indexer.py
 ```
 
-**Your CLAUDE.md should end up looking like this:**
+**Your CLAUDE.md should end up like this:**
 
 ```markdown
 # My Workspace
@@ -360,17 +348,13 @@ Claude retrieves relevant context automatically via hooks.
 - Stack: Node.js, PostgreSQL, Redis
 ```
 
-That's it! Everything else lives in your blocks and gets loaded only when needed.
-
 ---
 
 ## For Existing Claude Users
 
-Already have a big `CLAUDE.md` file? Here's how to migrate:
+Already have a big `CLAUDE.md` file?
 
-### Option A: Let Claude migrate for you (Recommended)
-
-Tell Claude:
+### Let Claude migrate for you (Recommended)
 
 ```
 I have an existing CLAUDE.md file that's gotten too big.
@@ -381,31 +365,9 @@ Help me migrate it to BloxCue by:
 4. Updating my CLAUDE.md to be minimal
 ```
 
-Claude will handle the heavy lifting!
+### Starting fresh?
 
-### Option B: Migrate manually
-
-1. **Identify sections** in your current CLAUDE.md
-2. **Create a block file** for each major section
-3. **Move content** from CLAUDE.md to the appropriate blocks
-4. **Trim your CLAUDE.md** to just essentials:
-
-```markdown
-# My Workspace
-
-Knowledge base at `~/.claude-memory/`.
-Claude automatically retrieves relevant context via hooks.
-
-## Essential Info Only
-- Project: MyApp
-- Stack: Node.js, PostgreSQL
-```
-
-### For New Users / New Machines
-
-Starting fresh? Even easier:
-
-1. Let Claude install Continuous-Claude + BloxCue (see Quick Start)
+1. Let Claude install Continuous-Claude + BloxCue
 2. Start with a minimal CLAUDE.md
 3. Add blocks as you go
 
@@ -419,14 +381,14 @@ Real numbers from actual usage:
 
 | Metric | Before BloxCue | After BloxCue | Saved |
 |--------|----------------|---------------|-------|
-| Tokens per prompt | ~8,500 | ~1,000 | **~7,500 tokens** |
-| Tokens per session (20 prompts) | ~170,000 | ~20,000 | **~150,000 tokens** |
+| Tokens per prompt | ~8,500 | ~1,000 | **~7,500** |
+| Tokens per session (20 prompts) | ~170,000 | ~20,000 | **~150,000** |
+| Reduction | - | - | **~88%** |
 
-### What this means for you
+### What this means
 
-Instead of loading your entire knowledge base on every prompt, Claude only loads what's relevant. Those saved tokens go toward:
-
-- **More thinking** - Claude can reason more deeply about your problem
+Saved tokens go toward:
+- **Deeper reasoning** - Claude can think more thoroughly
 - **Longer sessions** - Stay within context limits longer
 - **Faster responses** - Less to process means quicker replies
 
@@ -435,8 +397,6 @@ Instead of loading your entire knowledge base on every prompt, Claude only loads
 ## Directory Structure
 
 ### By Subject (Default)
-
-Best for: General use, mixed work, personal knowledge base
 
 ```
 ~/.claude-memory/
@@ -450,8 +410,6 @@ Best for: General use, mixed work, personal knowledge base
 ```
 
 ### By Project
-
-Best for: Freelancers, agencies, multiple client work
 
 ```
 ~/.claude-memory/
@@ -469,69 +427,72 @@ Best for: Freelancers, agencies, multiple client work
 ## Commands Reference
 
 ```bash
-# Index all your blocks
+# Index all blocks
 python3 ~/.claude-memory/scripts/indexer.py
 
 # Search for something
 python3 ~/.claude-memory/scripts/indexer.py --search "keyword"
+
+# Search with verbose output (shows scores)
+python3 ~/.claude-memory/scripts/indexer.py --search "keyword" -v
 
 # List all indexed blocks
 python3 ~/.claude-memory/scripts/indexer.py --list
 
 # Rebuild index from scratch
 python3 ~/.claude-memory/scripts/indexer.py --rebuild
+
+# Output as JSON
+python3 ~/.claude-memory/scripts/indexer.py --search "keyword" --json
 ```
 
 ---
 
 ## Best Practices
 
-1. **Keep your CLAUDE.md minimal** - Just essentials, let blocks handle details
+1. **Keep CLAUDE.md minimal** - Just essentials, let blocks handle details
 2. **One topic per file** - Better search precision
-3. **Use frontmatter** - Title, category, tags help indexing
+3. **Use frontmatter** - Title, category, and tags improve indexing
 4. **Use descriptive tags** - `[deployment, production, aws]` not just `[deploy]`
-5. **Re-index after adding files** - Run the indexer after new docs
+5. **Re-index after changes** - Run the indexer after adding/editing files
 
 ---
 
 ## FAQ
 
 <details>
-<summary><strong>Do I need Continuous-Claude to use this?</strong></summary>
+<summary><strong>Do I need Continuous-Claude?</strong></summary>
 
-Technically no, but we strongly recommend it. Continuous-Claude handles session memory (remembering what you were working on), while BloxCue handles knowledge retrieval (finding the right docs). They complement each other perfectly.
-
-Without Continuous-Claude, you'll save tokens but lose the session continuity features.
+Technically no, but recommended. Continuous-Claude handles session memory, BloxCue handles knowledge retrieval. They complement each other.
 </details>
 
 <details>
-<summary><strong>Will this work with Cursor/VS Code extensions?</strong></summary>
+<summary><strong>Will this work with Cursor/VS Code?</strong></summary>
 
-This is designed for **Claude Code CLI** (the terminal tool). It may work with other Claude integrations that support hooks, but we haven't tested them.
+Designed for **Claude Code CLI**. May work with other Claude integrations that support hooks, but untested.
 </details>
 
 <details>
-<summary><strong>How is this different from just using a smaller CLAUDE.md?</strong></summary>
+<summary><strong>How is this different from a smaller CLAUDE.md?</strong></summary>
 
 Two key differences:
+1. **Scalability** - Your knowledge grows without growing token usage
+2. **Relevance** - Only blocks matching your query get loaded
 
-1. **Scalability** - Your knowledge can grow without growing your token usage
-2. **Relevance** - Only the blocks relevant to your current question get loaded
-
-A smaller CLAUDE.md means less information available. BloxCue means the right information available at the right time.
+A smaller CLAUDE.md means less information. BloxCue means the right information at the right time.
 </details>
 
 <details>
-<summary><strong>What if Claude needs info from multiple blocks?</strong></summary>
+<summary><strong>What if Claude needs multiple blocks?</strong></summary>
 
-The retrieval hook can return multiple relevant blocks based on keyword matching. If you ask about "database deployment", it might return both the database block and the deployment block.
+The retrieval hook returns multiple relevant blocks based on keyword matching. A query about "database deployment" may return both the database block and deployment block.
 </details>
 
 <details>
-<summary><strong>Can I use this for project-specific docs too?</strong></summary>
+<summary><strong>Can I use project-specific docs?</strong></summary>
 
 Yes! You can have both:
-- Global: `~/.claude-memory/` for cross-project stuff
+- Global: `~/.claude-memory/` for cross-project content
 - Project: `./claude-memory/` for project-specific docs
 
 The installer supports setting up both.
@@ -540,16 +501,10 @@ The installer supports setting up both.
 <details>
 <summary><strong>How do I back up my blocks?</strong></summary>
 
-They're just markdown files! Back them up however you back up other files:
+They're just markdown files. Back them up however you prefer:
 - Git repo (recommended)
 - Cloud sync (Dropbox, iCloud, etc.)
-- Any backup solution you already use
-</details>
-
-<details>
-<summary><strong>Can I disable auto-retrieval?</strong></summary>
-
-Yes, just remove the hook from your `~/.claude/settings.json`. But we recommend keeping it on - that's the whole point of BloxCue!
+- Any backup solution you use
 </details>
 
 ---
@@ -558,7 +513,6 @@ Yes, just remove the hook from your `~/.claude/settings.json`. But we recommend 
 
 ### "Command not found: python3"
 
-Install Python 3:
 ```bash
 # macOS
 brew install python3
@@ -569,30 +523,15 @@ sudo apt install python3
 
 ### "No results found" when searching
 
-1. Make sure you've run the indexer: `python3 ~/.claude-memory/scripts/indexer.py`
-2. Check your files have the `.md` extension
-3. Verify files are in the right directory
+1. Run the indexer: `python3 ~/.claude-memory/scripts/indexer.py`
+2. Check files have `.md` extension
+3. Verify files are in the correct directory
 
 ### Hook not triggering
 
-1. Check your `~/.claude/settings.json` syntax (valid JSON?)
-2. Make sure the hook path is correct
+1. Check `~/.claude/settings.json` syntax (valid JSON?)
+2. Verify the hook path is correct
 3. Restart Claude Code after changing settings
-
-### Already have a big CLAUDE.md?
-
-See the "For Existing Claude Users" section above - we've got you covered!
-
----
-
-## Contributing
-
-Ideas welcome! Some things we'd love help with:
-
-- Better search algorithms (fuzzy matching, embeddings)
-- VSCode extension for browsing blocks
-- Web UI for managing your memory
-- Sync across machines
 
 ---
 
@@ -600,13 +539,36 @@ Ideas welcome! Some things we'd love help with:
 
 BloxCue is designed with security in mind:
 
-- **Local-only operations** - No network activity, no telemetry
-- **User-controlled data** - All files stay on your machine
-- **Input sanitization** - User prompts are sanitized before processing
-- **Path validation** - Prevents directory traversal attacks
-- **Settings backup** - Creates backup before modifying Claude config
+| Protection | Description |
+|------------|-------------|
+| **Local-only** | No network activity, no telemetry, no data collection |
+| **Path validation** | Prevents directory traversal attacks |
+| **Input sanitization** | User prompts are sanitized before processing |
+| **Type safety** | Handles malformed data gracefully without crashes |
+| **Settings backup** | Creates backup before modifying Claude config |
 
 See [SECURITY.md](SECURITY.md) for the full security audit report.
+
+---
+
+## Roadmap
+
+- [x] Porter Stemmer for word normalization
+- [x] IDF weighting for term importance
+- [x] Bigram/phrase matching
+- [x] Query intent detection
+- [x] Path traversal protection
+- [x] Type safety hardening
+- [ ] Semantic search with embeddings
+- [ ] VS Code extension for block management
+- [ ] Web UI for managing memory
+- [ ] Cross-machine sync
+
+---
+
+## Contributing
+
+Ideas and contributions welcome! See the roadmap above for planned features.
 
 ---
 
@@ -622,8 +584,6 @@ MIT - Use it however you want.
 
 ---
 
-<div align="center">
-
-Made by [@bokiko](https://twitter.com/bokiko) · [bokiko.io](https://bokiko.io)
-
-</div>
+<p align="center">
+  Made by <a href="https://github.com/bokiko">@bokiko</a> · <a href="https://twitter.com/bokiko">Twitter</a> · <a href="https://bokiko.io">bokiko.io</a>
+</p>
