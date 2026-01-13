@@ -47,24 +47,255 @@ STOPWORDS = {
     'yeah', 'yes', 'yeah', 'okay', 'ok', 'well', 'right', 'good', 'going',
 }
 
+# Intent patterns for query classification
+INTENT_PATTERNS = {
+    "howto": {
+        "prefixes": ["how to", "how do i", "how can i", "steps to", "guide to"],
+        "keywords": ["setup", "configure", "install", "create", "make", "build"],
+        "weight_adjustments": {"tags": 1.5, "keywords": 1.3}
+    },
+    "troubleshoot": {
+        "prefixes": ["why does", "why is", "fix", "error", "problem", "issue"],
+        "keywords": ["failing", "broken", "not working", "crash", "bug"],
+        "weight_adjustments": {"tags": 1.5, "preview": 2.0}
+    },
+    "concept": {
+        "prefixes": ["what is", "what are", "explain", "describe", "define"],
+        "keywords": ["concept", "theory", "overview", "introduction"],
+        "weight_adjustments": {"title": 1.5, "category": 1.3}
+    },
+    "reference": {
+        "prefixes": ["list of", "api", "reference", "syntax"],
+        "keywords": ["documentation", "spec", "schema", "format"],
+        "weight_adjustments": {"tags": 1.3, "category": 1.5}
+    }
+}
+
+
+def detect_query_intent(query: str) -> Tuple[str, Dict[str, float]]:
+    """
+    Detect query intent and return weight adjustments.
+    Returns (intent_name, weight_adjustments_dict).
+    """
+    if not isinstance(query, str):
+        return "general", {}
+    query_lower = query.lower()
+
+    for intent, patterns in INTENT_PATTERNS.items():
+        # Check prefixes
+        for prefix in patterns["prefixes"]:
+            if query_lower.startswith(prefix):
+                return intent, patterns["weight_adjustments"]
+
+        # Check keywords
+        for keyword in patterns["keywords"]:
+            if keyword in query_lower:
+                return intent, patterns["weight_adjustments"]
+
+    return "general", {}  # Default: no adjustments
+
 
 def normalize_word(word: str) -> str:
     """Normalize a word for comparison (lowercase, strip punctuation)."""
+    if not isinstance(word, str):
+        return ""
     return re.sub(r'[^\w]', '', word.lower())
 
 
-def simple_stem(word: str) -> str:
-    """Simple suffix stripping for better matching."""
+# =============================================================================
+# Porter Stemmer Implementation
+# =============================================================================
+
+def _is_consonant(word: str, i: int) -> bool:
+    """Check if character at position i is a consonant."""
+    if i >= len(word):
+        return False
+    c = word[i]
+    if c in 'aeiou':
+        return False
+    if c == 'y':
+        if i == 0:
+            return True
+        return not _is_consonant(word, i - 1)
+    return True
+
+
+def _measure(stem: str) -> int:
+    """
+    Count VC (vowel-consonant) sequences in stem.
+    m=0: tr, ee, tree, y, by
+    m=1: trouble, oats, trees, ivy
+    m=2: troubles, private, oaten, orrery
+    """
+    m = 0
+    i = 0
+    n = len(stem)
+
+    # Skip initial consonants
+    while i < n and _is_consonant(stem, i):
+        i += 1
+
+    while i < n:
+        # Count vowels
+        while i < n and not _is_consonant(stem, i):
+            i += 1
+        if i >= n:
+            break
+
+        # Found end of vowel sequence, now count consonants
+        while i < n and _is_consonant(stem, i):
+            i += 1
+        m += 1
+
+    return m
+
+
+def _has_vowel(stem: str) -> bool:
+    """Check if stem contains a vowel."""
+    for i in range(len(stem)):
+        if not _is_consonant(stem, i):
+            return True
+    return False
+
+
+def _ends_double_consonant(word: str) -> bool:
+    """Check for double consonant ending (e.g., -ll, -ss, -zz)."""
+    if len(word) < 2:
+        return False
+    return word[-1] == word[-2] and _is_consonant(word, len(word) - 1)
+
+
+def _ends_cvc(word: str) -> bool:
+    """
+    Check for consonant-vowel-consonant ending where last consonant is not w, x, or y.
+    """
+    if len(word) < 3:
+        return False
+    return (_is_consonant(word, len(word) - 1) and
+            not _is_consonant(word, len(word) - 2) and
+            _is_consonant(word, len(word) - 3) and
+            word[-1] not in 'wxy')
+
+
+def _replace_suffix(word: str, suffix: str, replacement: str, min_measure: int = 0) -> str:
+    """Replace suffix if word ends with it and measure condition is met."""
+    if word.endswith(suffix):
+        stem = word[:-len(suffix)]
+        if _measure(stem) > min_measure:
+            return stem + replacement
+    return word
+
+
+def porter_stem(word: str) -> str:
+    """
+    Porter Stemmer - 5-step suffix stripping algorithm.
+    Based on Martin Porter's 1980 paper.
+    """
     word = normalize_word(word)
 
-    # Common suffixes to strip
-    suffixes = ['ing', 'ed', 'es', 's', 'er', 'est', 'ly', 'tion', 'ment', 'ness', 'ful', 'less']
+    if len(word) <= 2:
+        return word
 
-    for suffix in suffixes:
-        if word.endswith(suffix) and len(word) > len(suffix) + 2:
-            return word[:-len(suffix)]
+    # Step 1a: Plurals
+    if word.endswith('sses'):
+        word = word[:-2]
+    elif word.endswith('ies'):
+        word = word[:-2]
+    elif word.endswith('ss'):
+        pass  # Keep ss
+    elif word.endswith('s'):
+        word = word[:-1]
+
+    # Step 1b: Past tense and progressive
+    flag = False
+    if word.endswith('eed'):
+        stem = word[:-3]
+        if _measure(stem) > 0:
+            word = word[:-1]  # eed -> ee
+    elif word.endswith('ed'):
+        stem = word[:-2]
+        if _has_vowel(stem):
+            word = stem
+            flag = True
+    elif word.endswith('ing'):
+        stem = word[:-3]
+        if _has_vowel(stem):
+            word = stem
+            flag = True
+
+    if flag:
+        if word.endswith('at') or word.endswith('bl') or word.endswith('iz'):
+            word = word + 'e'
+        elif _ends_double_consonant(word) and word[-1] not in 'lsz':
+            word = word[:-1]
+        elif _measure(word) == 1 and _ends_cvc(word):
+            word = word + 'e'
+
+    # Step 1c: Y to I
+    if word.endswith('y'):
+        stem = word[:-1]
+        if _has_vowel(stem):
+            word = stem + 'i'
+
+    # Step 2: Double suffixes
+    step2_suffixes = [
+        ('ational', 'ate'), ('tional', 'tion'), ('enci', 'ence'), ('anci', 'ance'),
+        ('izer', 'ize'), ('abli', 'able'), ('alli', 'al'), ('entli', 'ent'),
+        ('eli', 'e'), ('ousli', 'ous'), ('ization', 'ize'), ('ation', 'ate'),
+        ('ator', 'ate'), ('alism', 'al'), ('iveness', 'ive'), ('fulness', 'ful'),
+        ('ousness', 'ous'), ('aliti', 'al'), ('iviti', 'ive'), ('biliti', 'ble'),
+    ]
+    for suffix, replacement in step2_suffixes:
+        if word.endswith(suffix):
+            stem = word[:-len(suffix)]
+            if _measure(stem) > 0:
+                word = stem + replacement
+            break
+
+    # Step 3: Derivational suffixes
+    step3_suffixes = [
+        ('icate', 'ic'), ('ative', ''), ('alize', 'al'), ('iciti', 'ic'),
+        ('ical', 'ic'), ('ful', ''), ('ness', ''),
+    ]
+    for suffix, replacement in step3_suffixes:
+        if word.endswith(suffix):
+            stem = word[:-len(suffix)]
+            if _measure(stem) > 0:
+                word = stem + replacement
+            break
+
+    # Step 4: Remove suffixes
+    step4_suffixes = [
+        'al', 'ance', 'ence', 'er', 'ic', 'able', 'ible', 'ant', 'ement',
+        'ment', 'ent', 'ion', 'ou', 'ism', 'ate', 'iti', 'ous', 'ive', 'ize',
+    ]
+    for suffix in step4_suffixes:
+        if word.endswith(suffix):
+            stem = word[:-len(suffix)]
+            if _measure(stem) > 1:
+                # Special case for -ion: stem must end in s or t
+                if suffix == 'ion' and stem and stem[-1] not in 'st':
+                    continue
+                word = stem
+            break
+
+    # Step 5a: Remove final -e
+    if word.endswith('e'):
+        stem = word[:-1]
+        m = _measure(stem)
+        if m > 1 or (m == 1 and not _ends_cvc(stem)):
+            word = stem
+
+    # Step 5b: Reduce -ll to -l
+    if word.endswith('ll') and _measure(word[:-1]) > 1:
+        word = word[:-1]
 
     return word
+
+
+def simple_stem(word: str) -> str:
+    """Backward-compatible wrapper using Porter Stemmer."""
+    return porter_stem(normalize_word(word))
 
 
 def fuzzy_match(query_term: str, target: str) -> float:
@@ -136,16 +367,16 @@ def extract_keywords(content: str, frontmatter: Dict) -> List[str]:
     """Extract searchable keywords from content."""
     keywords = set()
 
-    # Add tags (high priority)
+    # Add tags (high priority) - filter to strings only
     tags = frontmatter.get("tags", [])
     if isinstance(tags, list):
-        keywords.update(tags)
+        keywords.update(t for t in tags if isinstance(t, str))
     elif isinstance(tags, str):
         keywords.add(tags)
 
     # Add title words
     title = frontmatter.get("title", "")
-    if title:
+    if title and isinstance(title, str):
         for word in title.split():
             normalized = normalize_word(word)
             if normalized and normalized not in STOPWORDS and len(normalized) > 2:
@@ -153,7 +384,7 @@ def extract_keywords(content: str, frontmatter: Dict) -> List[str]:
 
     # Add category parts
     category = frontmatter.get("category", "")
-    if category:
+    if category and isinstance(category, str):
         for part in category.replace("/", " ").replace("-", " ").split():
             normalized = normalize_word(part)
             if normalized and normalized not in STOPWORDS:
@@ -179,6 +410,42 @@ def extract_keywords(content: str, frontmatter: Dict) -> List[str]:
     return list(keywords)
 
 
+def extract_bigrams(content: str, frontmatter: Dict) -> List[str]:
+    """
+    Extract 2-word phrases (bigrams) from titles and headings.
+    Returns hyphenated bigrams like 'error-handling', 'api-reference'.
+    """
+    bigrams: Set[str] = set()
+
+    # Extract from title
+    title = frontmatter.get("title", "")
+    if title and isinstance(title, str):
+        title_words = []
+        for word in title.split():
+            normalized = normalize_word(word)
+            if normalized and normalized not in STOPWORDS and len(normalized) > 1:
+                title_words.append(porter_stem(normalized))
+
+        for i in range(len(title_words) - 1):
+            bigram = f"{title_words[i]}-{title_words[i+1]}"
+            bigrams.add(bigram)
+
+    # Extract from headings
+    headings = re.findall(r"^#+\s+(.+)$", content, re.MULTILINE)
+    for heading in headings:
+        heading_words = []
+        for word in heading.split():
+            normalized = normalize_word(word)
+            if normalized and normalized not in STOPWORDS and len(normalized) > 1:
+                heading_words.append(porter_stem(normalized))
+
+        for i in range(len(heading_words) - 1):
+            bigram = f"{heading_words[i]}-{heading_words[i+1]}"
+            bigrams.add(bigram)
+
+    return list(bigrams)
+
+
 def index_file(filepath: Path) -> Optional[Dict]:
     """Index a single markdown file."""
     try:
@@ -194,6 +461,7 @@ def index_file(filepath: Path) -> Optional[Dict]:
             "category": frontmatter.get("category", str(relative_path.parent)),
             "tags": frontmatter.get("tags", []),
             "keywords": extract_keywords(body, frontmatter),
+            "bigrams": extract_bigrams(body, frontmatter),
             "size": stat.st_size,
             "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
             "preview": body[:300].replace("\n", " ").strip(),
@@ -238,11 +506,66 @@ def build_index(single_file: Optional[Path] = None) -> Dict:
 
     index["built"] = datetime.now().isoformat()
 
+    # Calculate IDF scores for all terms
+    index["idf"] = calculate_idf(index)
+
     # Save index
     INDEX_FILE.parent.mkdir(parents=True, exist_ok=True)
     INDEX_FILE.write_text(json.dumps(index, indent=2))
 
     return index
+
+
+def calculate_idf(index: Dict) -> Dict[str, float]:
+    """
+    Calculate IDF (Inverse Document Frequency) for all terms across documents.
+    IDF formula: log(N / (1 + df)) where N = total docs, df = docs containing term
+    """
+    import math
+
+    term_doc_count: Dict[str, int] = {}  # term -> number of docs containing it
+    total_docs = len(index.get("files", []))
+
+    if total_docs == 0:
+        return {}
+
+    for entry in index.get("files", []):
+        # Collect unique stemmed terms from this doc
+        doc_terms: Set[str] = set()
+
+        # From title
+        title = entry.get("title", "")
+        if isinstance(title, str):
+            for word in title.lower().split():
+                normalized = normalize_word(word)
+                if normalized and normalized not in STOPWORDS:
+                    doc_terms.add(porter_stem(normalized))
+
+        # From tags
+        tags = entry.get("tags", [])
+        if isinstance(tags, list):
+            for tag in tags:
+                if isinstance(tag, str):
+                    doc_terms.add(porter_stem(normalize_word(tag)))
+
+        # From keywords
+        keywords = entry.get("keywords", [])
+        if isinstance(keywords, list):
+            for keyword in keywords:
+                if isinstance(keyword, str):
+                    doc_terms.add(porter_stem(normalize_word(keyword)))
+
+        # Count term occurrences across docs
+        for term in doc_terms:
+            if term:
+                term_doc_count[term] = term_doc_count.get(term, 0) + 1
+
+    # Calculate IDF: log((N + 1) / (df + 1)) - ensures non-negative values
+    idf: Dict[str, float] = {}
+    for term, df in term_doc_count.items():
+        idf[term] = max(0.0, math.log((total_docs + 1) / (df + 1)))
+
+    return idf
 
 
 def load_index() -> Dict:
@@ -256,8 +579,29 @@ def load_index() -> Dict:
 
 
 def search(query: str, limit: int = 5) -> List[Dict]:
-    """Search indexed files with fuzzy matching."""
+    """Search indexed files with fuzzy matching, IDF weighting, bigrams, and intent detection."""
     index = load_index()
+    idf_scores = index.get("idf", {})
+
+    # Detect query intent and get weight adjustments
+    intent, weight_adjustments = detect_query_intent(query)
+
+    # Base weights
+    WEIGHTS = {
+        "title": 15,
+        "title_word": 8,
+        "tags": 10,
+        "keywords": 5,
+        "category": 4,
+        "path": 2,
+        "preview": 1,
+        "bigram": 25
+    }
+
+    # Apply intent-based weight adjustments
+    for field, multiplier in weight_adjustments.items():
+        if field in WEIGHTS:
+            WEIGHTS[field] *= multiplier
 
     # Parse query - remove stopwords but keep important terms
     query_terms = []
@@ -271,6 +615,13 @@ def search(query: str, limit: int = 5) -> List[Dict]:
     if not query_terms:
         query_terms = [normalize_word(w) for w in query.lower().split() if normalize_word(w)]
 
+    # Extract bigrams from query
+    query_bigrams = []
+    normalized_query_words = [normalize_word(w) for w in query.lower().split()
+                              if normalize_word(w) not in STOPWORDS and len(normalize_word(w)) > 1]
+    for i in range(len(normalized_query_words) - 1):
+        query_bigrams.append(f"{porter_stem(normalized_query_words[i])}-{porter_stem(normalized_query_words[i+1])}")
+
     results = []
 
     for entry in index.get("files", []):
@@ -279,55 +630,78 @@ def search(query: str, limit: int = 5) -> List[Dict]:
         # Check title (highest weight)
         title = entry.get("title", "").lower()
         for term in query_terms:
+            stemmed_term = porter_stem(term)
+            term_idf = idf_scores.get(stemmed_term, 1.0)
+
             match_score = fuzzy_match(term, title)
             if match_score > 0:
-                score += 15 * match_score
+                score += WEIGHTS["title"] * match_score * term_idf
             # Also check individual title words
             for title_word in title.split():
                 word_score = fuzzy_match(term, title_word)
                 if word_score > 0.5:
-                    score += 8 * word_score
+                    score += WEIGHTS["title_word"] * word_score * term_idf
 
         # Check tags (high weight)
         tags = entry.get("tags", [])
         if isinstance(tags, list):
             for tag in tags:
+                if not isinstance(tag, str):
+                    continue
                 for term in query_terms:
+                    stemmed_term = porter_stem(term)
+                    term_idf = idf_scores.get(stemmed_term, 1.0)
                     match_score = fuzzy_match(term, tag)
                     if match_score > 0:
-                        score += 10 * match_score
+                        score += WEIGHTS["tags"] * match_score * term_idf
 
         # Check keywords (medium weight)
         keywords = entry.get("keywords", [])
-        for keyword in keywords:
-            for term in query_terms:
-                match_score = fuzzy_match(term, keyword)
-                if match_score > 0:
-                    score += 5 * match_score
+        if isinstance(keywords, list):
+            for keyword in keywords:
+                if not isinstance(keyword, str):
+                    continue
+                for term in query_terms:
+                    stemmed_term = porter_stem(term)
+                    term_idf = idf_scores.get(stemmed_term, 1.0)
+                    match_score = fuzzy_match(term, keyword)
+                    if match_score > 0:
+                        score += WEIGHTS["keywords"] * match_score * term_idf
+
+        # Check bigrams (very high weight for phrase matches)
+        entry_bigrams = entry.get("bigrams", [])
+        for qbigram in query_bigrams:
+            for ebigram in entry_bigrams:
+                if qbigram == ebigram:
+                    score += WEIGHTS["bigram"]  # Exact bigram match
+                elif qbigram in ebigram or ebigram in qbigram:
+                    score += WEIGHTS["bigram"] * 0.5  # Partial bigram match
 
         # Check category (medium weight)
         category = entry.get("category", "").lower()
         for term in query_terms:
+            stemmed_term = porter_stem(term)
+            term_idf = idf_scores.get(stemmed_term, 1.0)
             for cat_part in category.replace("/", " ").split():
                 match_score = fuzzy_match(term, cat_part)
                 if match_score > 0:
-                    score += 4 * match_score
+                    score += WEIGHTS["category"] * match_score * term_idf
 
         # Check path (low weight but useful)
         path = entry.get("path", "").lower()
         for term in query_terms:
             if term in path:
-                score += 2
+                score += WEIGHTS["path"]
 
         # Check preview (lowest weight)
         preview = entry.get("preview", "").lower()
         for term in query_terms:
             if term in preview:
-                score += 1
+                score += WEIGHTS["preview"]
             # Boost if multiple terms found in preview
             term_count = preview.count(term)
             if term_count > 1:
-                score += 0.5 * min(term_count, 3)
+                score += WEIGHTS["preview"] * 0.5 * min(term_count, 3)
 
         if score > 0:
             results.append({"entry": entry, "score": score})
@@ -353,8 +727,13 @@ def display_results(results: List[Dict], verbose: bool = False):
         print(f"   Path: {entry['path']}")
         print(f"   Category: {entry['category']}")
         if entry.get("tags"):
-            tags_str = ', '.join(entry['tags']) if isinstance(entry['tags'], list) else entry['tags']
-            print(f"   Tags: {tags_str}")
+            tags = entry['tags']
+            if isinstance(tags, list):
+                tags_str = ', '.join(str(t) for t in tags if t is not None)
+            else:
+                tags_str = str(tags) if tags else ""
+            if tags_str:
+                print(f"   Tags: {tags_str}")
 
         if verbose:
             print(f"   Score: {score:.1f}")
@@ -390,9 +769,22 @@ def list_files():
 
 def get_file_content(path: str) -> str:
     """Get full content of a file for context injection."""
+    if not isinstance(path, str):
+        return ""
+
     filepath = MEMORY_DIR / path
-    if filepath.exists():
-        content = filepath.read_text()
+
+    # Security: Validate file is within MEMORY_DIR (prevent path traversal)
+    try:
+        resolved_path = filepath.resolve()
+        memory_dir_resolved = MEMORY_DIR.resolve()
+        if not str(resolved_path).startswith(str(memory_dir_resolved)):
+            return ""  # Path traversal attempt - reject silently
+    except Exception:
+        return ""
+
+    if resolved_path.exists():
+        content = resolved_path.read_text()
         _, body = parse_frontmatter(content)
         return body
     return ""
