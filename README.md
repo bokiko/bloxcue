@@ -580,7 +580,7 @@ Ideas and contributions welcome! See the roadmap above for planned features.
 
 ## Credits
 
-- [parcadei](https://github.com/parcadei) - Creator of [Continuous-Claude](https://github.com/parcadei/Continuous-Claude-v2)
+- [parcadei](https://github.com/parcadei) - Creator of [Continuous-Claude-V3](https://github.com/parcadei/Continuous-Claude-v3)
 
 ---
 
