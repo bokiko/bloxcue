@@ -62,7 +62,7 @@
 
 ## The Story
 
-After using [Continuous-Claude](https://github.com/parcadei/Continuous-Claude-v2) (created by [parcadei](https://github.com/parcadei)), we noticed something: our `CLAUDE.md` files kept growing. Every time we documented something new, added a guide, or saved a configuration, the file got bigger.
+After using [Continuous-Claude](https://github.com/parcadei/Continuous-Claude-v3) (created by [parcadei](https://github.com/parcadei)), we noticed something: our `CLAUDE.md` files kept growing. Every time we documented something new, added a guide, or saved a configuration, the file got bigger.
 
 **The problem?** Claude loads your entire `CLAUDE.md` on every single prompt. That 30KB file? Loaded 20+ times per session. Hundreds of thousands of tokens wasted on content Claude didn't need.
 
