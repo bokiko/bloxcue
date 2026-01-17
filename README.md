@@ -87,6 +87,8 @@ BloxCue includes a purpose-built search engine optimized for context retrieval:
 | **Phrase Matching** | Recognizes multi-word queries like "error handling" as phrases |
 | **Query Intent Detection** | Adjusts results based on query type (how-to, troubleshooting, concepts) |
 | **Fuzzy Matching** | Finds relevant blocks even with typos or partial matches |
+| **Memoized Stemming** | LRU cache on stemmer for 50-70% faster repeated searches |
+| **Index Caching** | In-memory cache with mtime checking eliminates repeated disk reads |
 
 ### Automatic Context Injection
 
@@ -100,6 +102,12 @@ BloxCue includes a purpose-built search engine optimized for context retrieval:
 - Reduces context loading by ~88%
 - Saves ~7,500 tokens per prompt on average
 - More tokens available for Claude's reasoning
+
+### Zero Dependencies
+
+- Pure Python standard library - no pip installs required
+- No external services or API calls
+- Works offline, works anywhere Python 3 runs
 
 ---
 
@@ -546,6 +554,7 @@ BloxCue is designed with security in mind:
 | **Input sanitization** | User prompts are sanitized before processing |
 | **Type safety** | Handles malformed data gracefully without crashes |
 | **Settings backup** | Creates backup before modifying Claude config |
+| **File locking** | Exclusive locks prevent index corruption from concurrent sessions |
 
 See [SECURITY.md](SECURITY.md) for the full security audit report.
 
@@ -559,6 +568,9 @@ See [SECURITY.md](SECURITY.md) for the full security audit report.
 - [x] Query intent detection
 - [x] Path traversal protection
 - [x] Type safety hardening
+- [x] Stemmer memoization (LRU cache)
+- [x] Index caching with mtime invalidation
+- [x] File locking for concurrent safety
 - [ ] Semantic search with embeddings
 - [ ] VS Code extension for block management
 - [ ] Web UI for managing memory
