@@ -184,27 +184,21 @@ If you prefer manual setup, follow our [Continuous-Claude Installation Guide](ht
 Copy and paste this to Claude:
 
 ```
-I'd like you to set up my Claude Code environment with Continuous-Claude and BloxCue.
+Set up BloxCue for intelligent context management.
 
-Please:
-1. First, install Continuous-Claude from https://github.com/bokiko/continuous-claude-guide
+1. Clone https://github.com/bokiko/bloxcue to a temp location
+2. Run ./install.sh and guide me through the options:
+   - Scope: Global, Project, or Both
+   - Directory structure preference
+3. Set up the auto-retrieval hook in ~/.claude/settings.json
+4. Create a sample block to test it works
+5. Clean up the cloned repo after install
 
-2. Then, install BloxCue from https://github.com/bokiko/bloxcue
-   - Clone the repo and run the installer
-   - Ask me which setup I prefer:
-     * Global (~/.claude-memory) - for personal docs across projects
-     * Project (./claude-memory) - for project-specific docs
-     * Both - recommended
-   - Ask me how I want to organize my blocks
-   - Set up the auto-retrieval hook
-   - Create a sample block to get me started
-
-3. Verify both tools are working together
-
-4. Give me a quick summary of what was set up
+If I don't have Continuous-Claude yet, set that up first from:
+https://github.com/bokiko/continuous-claude-guide
 ```
 
-Claude will handle all the technical details while customizing the setup to your needs.
+Claude will handle the technical details while asking for your preferences.
 
 ---
 
