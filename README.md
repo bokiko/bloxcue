@@ -5,7 +5,7 @@
 <h3>Intelligent context blocks for Claude Code. Load what you need, when you need it.</h3>
 
 <p>
-  <a href="https://github.com/bokiko/continuous-claude-guide">
+  <a href="https://github.com/parcadei/Continuous-Claude-v3">
     <img src="https://img.shields.io/badge/Requires-Continuous--Claude-blue?style=for-the-badge" alt="Requires Continuous-Claude" />
   </a>
 </p>
@@ -171,9 +171,9 @@ BloxCue works best alongside Continuous-Claude. They're complementary tools:
 - Continuous-Claude = Claude's **memory** (what to remember)
 - BloxCue = Claude's **filing cabinet** (where to find it efficiently)
 
-If you prefer manual setup, follow our [Continuous-Claude Installation Guide](https://github.com/bokiko/continuous-claude-guide) first.
+If you prefer manual setup, follow our [Continuous-Claude v3](https://github.com/parcadei/Continuous-Claude-v3) first.
 
-> **Credit:** Continuous-Claude was created by [parcadei](https://github.com/parcadei). Check out the [original repository](https://github.com/parcadei/Continuous-Claude-v2).
+> **Credit:** Continuous-Claude was created by [parcadei](https://github.com/parcadei). Check out [Continuous-Claude v3](https://github.com/parcadei/Continuous-Claude-v3).
 
 ---
 
@@ -195,7 +195,7 @@ Set up BloxCue for intelligent context management.
 5. Clean up the cloned repo after install
 
 If I don't have Continuous-Claude yet, set that up first from:
-https://github.com/bokiko/continuous-claude-guide
+https://github.com/parcadei/Continuous-Claude-v3
 ```
 
 Claude will handle the technical details while asking for your preferences.
@@ -206,7 +206,7 @@ Claude will handle the technical details while asking for your preferences.
 
 #### Step 1: Install Continuous-Claude
 
-Follow our [Continuous-Claude Installation Guide](https://github.com/bokiko/continuous-claude-guide).
+Follow our [Continuous-Claude v3](https://github.com/parcadei/Continuous-Claude-v3).
 
 #### Step 2: Clone BloxCue
 
@@ -580,7 +580,7 @@ Ideas and contributions welcome! See the roadmap above for planned features.
 
 ## Credits
 
-- [parcadei](https://github.com/parcadei) - Creator of [Continuous-Claude-V3](https://github.com/parcadei/Continuous-Claude-v3)
+- [parcadei](https://github.com/parcadei) - Creator of [Continuous-Claude v3](https://github.com/parcadei/Continuous-Claude-v3)
 
 ---
 
