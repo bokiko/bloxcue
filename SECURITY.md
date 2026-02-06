@@ -1,5 +1,17 @@
 # Security Policy
 
+## Security Reports
+
+All security audits and remediations are documented in [`security/`](security/):
+
+| Date | Report | Findings | Status |
+|------|--------|----------|--------|
+| 2026-02-06 | [Audit Remediation](security/2026-02-06-audit-remediation.md) | 2 critical, 2 medium, 4 low | All fixed |
+
+We believe in full transparency. If vulnerabilities are found, we document what they were, how they were exploited, and exactly how we fixed them.
+
+---
+
 ## Security Rating: LOW RISK
 
 BloxCue is a **local-only** context retrieval engine for Claude Code. Core operations happen on your machine with no external dependencies. The optional PostgreSQL integration connects only to a user-configured local database.
@@ -151,12 +163,14 @@ The `install.sh` script:
 
 ## Vulnerability Assessment
 
-| Severity | Count | Details |
-|----------|-------|---------|
-| Critical | 0 | None |
-| High | 0 | None |
-| Medium | 0 | Path traversal and SQL injection mitigated |
-| Low | 0 | All recommendations implemented |
+| Severity | Found | Fixed | Details |
+|----------|-------|-------|---------|
+| Critical | 2 | 2 | Command injection + heredoc code injection in hook ([details](security/2026-02-06-audit-remediation.md)) |
+| High | 0 | 0 | None |
+| Medium | 2 | 2 | Path traversal prefix bypass + unbounded MCP params ([details](security/2026-02-06-audit-remediation.md)) |
+| Low | 4 | 4 | Env var parsing, error disclosure, bare excepts, folder validation ([details](security/2026-02-06-audit-remediation.md)) |
+
+**Open vulnerabilities: 0**
 
 ## Security Checklist
 
@@ -186,10 +200,10 @@ If you discover a security issue, please:
 
 ## Audit History
 
-| Date | Version | Auditor | Result |
-|------|---------|---------|--------|
-| 2025-01-01 | v1.0 | Automated Security Analysis + Corridor | SAFE |
-| 2026-02-06 | v2.0 | Manual audit (MCP + PG integration) | SAFE |
+| Date | Version | Auditor | Findings | Result |
+|------|---------|---------|----------|--------|
+| 2025-01-01 | v1.0 | Automated Security Analysis + Corridor | None | SAFE |
+| 2026-02-06 | v2.0 | Independent security audit | 8 issues (2C/2M/4L) | All remediated same day |
 
 ---
 
