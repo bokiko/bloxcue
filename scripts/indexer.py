@@ -24,10 +24,29 @@ from datetime import datetime
 from functools import lru_cache
 from typing import Dict, List, Optional, Tuple, Set
 
+# PostgreSQL provider (optional)
+try:
+    from pg_provider import (
+        is_available as pg_is_available,
+        fetch_learnings as pg_fetch_learnings,
+        fetch_learning_content as pg_fetch_learning_content,
+        learning_to_index_entry as pg_learning_to_entry,
+    )
+    HAS_PG_PROVIDER = True
+except ImportError:
+    HAS_PG_PROVIDER = False
+
 # Configuration
 SCRIPT_DIR = Path(__file__).parent
-MEMORY_DIR = SCRIPT_DIR.parent
+MEMORY_DIR = Path(os.environ.get("BLOXCUE_MEMORY_DIR", str(SCRIPT_DIR.parent)))
 INDEX_FILE = SCRIPT_DIR / ".index.json"
+USAGE_FILE = SCRIPT_DIR / ".usage.jsonl"
+MAX_INJECT_TOKENS = int(os.environ.get("BLOXCUE_MAX_TOKENS", "3000"))
+
+# PostgreSQL integration (optional)
+PG_DATABASE_URL = os.environ.get("BLOXCUE_DATABASE_URL", os.environ.get("DATABASE_URL", ""))
+PG_ENABLED = bool(PG_DATABASE_URL) and os.environ.get("BLOXCUE_PG_ENABLED", "1") != "0"
+PG_CACHE_TTL = int(os.environ.get("BLOXCUE_PG_CACHE_TTL", "300"))
 
 # Stopwords - common words to ignore in search
 STOPWORDS = {
@@ -95,6 +114,65 @@ def detect_query_intent(query: str) -> Tuple[str, Dict[str, float]]:
                 return intent, patterns["weight_adjustments"]
 
     return "general", {}  # Default: no adjustments
+
+
+# Synonym map for query expansion (common tech terms)
+SYNONYM_MAP = {
+    "db": ["database"],
+    "database": ["db"],
+    "api": ["endpoint", "rest"],
+    "endpoint": ["api", "route"],
+    "auth": ["authentication", "login"],
+    "authentication": ["auth", "login"],
+    "login": ["auth", "signin"],
+    "config": ["configuration", "settings"],
+    "configuration": ["config", "settings"],
+    "deploy": ["deployment", "release"],
+    "deployment": ["deploy", "release"],
+    "ci": ["continuous integration", "pipeline"],
+    "cd": ["continuous deployment", "pipeline"],
+    "docker": ["container", "containerize"],
+    "container": ["docker"],
+    "k8s": ["kubernetes"],
+    "kubernetes": ["k8s"],
+    "env": ["environment"],
+    "repo": ["repository"],
+    "deps": ["dependencies"],
+    "infra": ["infrastructure"],
+    "frontend": ["ui", "client"],
+    "backend": ["server", "api"],
+    "test": ["testing", "spec"],
+    "bug": ["error", "issue", "defect"],
+    "error": ["bug", "exception", "failure"],
+    "fix": ["patch", "resolve", "repair"],
+    "setup": ["install", "configure"],
+    "install": ["setup", "configure"],
+    "migrate": ["migration", "upgrade"],
+    "perf": ["performance"],
+    "sec": ["security"],
+    "docs": ["documentation"],
+    "doc": ["documentation"],
+}
+
+
+def expand_query(terms: List[str], max_expansions: int = 3) -> List[Tuple[str, float]]:
+    """
+    Expand query terms with synonyms/acronyms.
+    Returns list of (term, weight) tuples. Original terms get weight 1.0,
+    expanded terms get weight 0.4 (lower to avoid diluting relevance).
+    """
+    expanded: List[Tuple[str, float]] = []
+
+    for term in terms:
+        expanded.append((term, 1.0))
+        synonyms = SYNONYM_MAP.get(term, [])
+        for syn in synonyms[:max_expansions]:
+            # Stem the synonym for matching
+            stemmed_syn = porter_stem(syn)
+            if stemmed_syn and stemmed_syn != porter_stem(term):
+                expanded.append((stemmed_syn, 0.4))
+
+    return expanded
 
 
 def normalize_word(word: str) -> str:
@@ -524,10 +602,27 @@ def build_index(single_file: Optional[Path] = None) -> Dict:
             index["files"].append(entry)
             print(f"Indexed: {entry['path']}")
 
+    # Merge PostgreSQL learnings (if available)
+    if HAS_PG_PROVIDER and PG_ENABLED and pg_is_available(PG_DATABASE_URL):
+        try:
+            pg_learnings = pg_fetch_learnings(PG_DATABASE_URL, limit=500)
+            pg_count = 0
+            for learning in pg_learnings:
+                entry = pg_learning_to_entry(learning, extract_keywords_fn=extract_keywords)
+                if entry and not any(f.get("path") == entry["path"] for f in index["files"]):
+                    index["files"].append(entry)
+                    pg_count += 1
+            if pg_count > 0:
+                print(f"Merged {pg_count} PostgreSQL learnings", file=sys.stderr)
+            index["pg_fetched_at"] = datetime.now().isoformat()
+        except Exception as e:
+            print(f"[BloxCue PG] Error merging learnings: {e}", file=sys.stderr)
+
     index["built"] = datetime.now().isoformat()
 
-    # Calculate IDF scores for all terms
+    # Calculate IDF scores and document stats for BM25
     index["idf"] = calculate_idf(index)
+    index["doc_stats"] = calculate_doc_stats(index)
 
     # Save index with file locking for concurrent safety
     INDEX_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -593,6 +688,94 @@ def calculate_idf(index: Dict) -> Dict[str, float]:
     return idf
 
 
+def calculate_doc_stats(index: Dict) -> Dict:
+    """
+    Calculate per-document term frequencies and lengths for BM25 scoring.
+    Stores term frequency counts and total term count per document.
+
+    Returns:
+        {
+            "avg_dl": float,  # average document length across all docs
+            "docs": {
+                "path": {
+                    "tf": {"stemmed_term": count, ...},
+                    "dl": int  # total terms in document
+                }
+            }
+        }
+    """
+    docs_stats: Dict[str, Dict] = {}
+    total_length = 0
+
+    for entry in index.get("files", []):
+        path = entry.get("path", "")
+        term_freq: Dict[str, int] = {}
+
+        def count_term(term: str, weight: int = 1):
+            if term:
+                term_freq[term] = term_freq.get(term, 0) + weight
+
+        # Title terms (weight 3 - most important)
+        title = entry.get("title", "")
+        if isinstance(title, str):
+            for word in title.lower().split():
+                stemmed = porter_stem(normalize_word(word))
+                if stemmed and stemmed not in STOPWORDS:
+                    count_term(stemmed, 3)
+
+        # Tags (weight 2)
+        tags = entry.get("tags", [])
+        if isinstance(tags, list):
+            for tag in tags:
+                if isinstance(tag, str):
+                    stemmed = porter_stem(normalize_word(tag))
+                    if stemmed:
+                        count_term(stemmed, 2)
+
+        # Keywords (weight 1)
+        keywords = entry.get("keywords", [])
+        if isinstance(keywords, list):
+            for kw in keywords:
+                if isinstance(kw, str):
+                    stemmed = porter_stem(normalize_word(kw))
+                    if stemmed:
+                        count_term(stemmed, 1)
+
+        # Category (weight 1)
+        category = entry.get("category", "")
+        if isinstance(category, str):
+            for part in category.replace("/", " ").replace("-", " ").split():
+                stemmed = porter_stem(normalize_word(part))
+                if stemmed and stemmed not in STOPWORDS:
+                    count_term(stemmed, 1)
+
+        # Preview (weight 1 per unique term)
+        preview = entry.get("preview", "")
+        if isinstance(preview, str):
+            seen_preview: Set[str] = set()
+            for word in preview.lower().split():
+                stemmed = porter_stem(normalize_word(word))
+                if stemmed and stemmed not in STOPWORDS and stemmed not in seen_preview:
+                    count_term(stemmed, 1)
+                    seen_preview.add(stemmed)
+
+        dl = sum(term_freq.values())
+        total_length += dl
+
+        docs_stats[path] = {
+            "tf": term_freq,
+            "dl": dl
+        }
+
+    total_docs = len(index.get("files", []))
+    avg_dl = total_length / total_docs if total_docs > 0 else 1.0
+
+    return {
+        "avg_dl": avg_dl,
+        "docs": docs_stats
+    }
+
+
 # Index cache for avoiding repeated disk reads
 _index_cache: Optional[Dict] = None
 _index_mtime: Optional[float] = None
@@ -613,6 +796,20 @@ def load_index() -> Dict:
 
             # Return cached index if file hasn't changed
             if _index_cache is not None and _index_mtime == current_mtime:
+                # Check PG cache TTL - rebuild if PG data is stale
+                if HAS_PG_PROVIDER and PG_ENABLED:
+                    pg_fetched = _index_cache.get("pg_fetched_at")
+                    if pg_fetched:
+                        try:
+                            fetched_time = datetime.fromisoformat(pg_fetched)
+                            age_seconds = (datetime.now() - fetched_time).total_seconds()
+                            if age_seconds > PG_CACHE_TTL:
+                                # PG data stale, trigger rebuild
+                                _index_cache = None
+                                _index_mtime = None
+                                return build_index()
+                        except (ValueError, TypeError):
+                            pass
                 return _index_cache
 
             # Load and cache
@@ -625,138 +822,239 @@ def load_index() -> Dict:
     return build_index()
 
 
+def log_usage(query: str, results: List[Dict]):
+    """
+    Append a search usage record to the usage log (JSONL format).
+    Tracks queries, results, scores, and whether results were found.
+    """
+    record = {
+        "timestamp": datetime.now().isoformat(),
+        "query": query,
+        "results": [r["entry"]["path"] for r in results[:5]],
+        "scores": [round(r["score"], 2) for r in results[:5]],
+        "hit": len(results) > 0,
+    }
+    try:
+        with open(USAGE_FILE, "a") as f:
+            f.write(json.dumps(record, separators=(",", ":")) + "\n")
+    except Exception:
+        pass  # Non-critical - don't break search on logging failure
+
+
+def load_usage_log() -> List[Dict]:
+    """Load all usage records from the JSONL log file."""
+    records = []
+    if not USAGE_FILE.exists():
+        return records
+    try:
+        for line in USAGE_FILE.read_text().strip().split("\n"):
+            if line:
+                try:
+                    records.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue  # Skip corrupt lines, keep parsing
+    except Exception:
+        pass
+    return records
+
+
+def bm25_score(term: str, doc_path: str, doc_stats: Dict, idf_scores: Dict,
+               k1: float = 1.5, b: float = 0.75) -> float:
+    """
+    Calculate BM25 score for a single term against a single document.
+
+    BM25 formula: IDF(q) * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * dl/avgdl))
+
+    Args:
+        term: Stemmed query term
+        doc_path: Document path (key into doc_stats)
+        doc_stats: Pre-computed document statistics from calculate_doc_stats()
+        idf_scores: Pre-computed IDF scores
+        k1: Term frequency saturation parameter (1.5 = standard)
+        b: Length normalization parameter (0.75 = standard)
+
+    Returns:
+        BM25 score for this term-document pair
+    """
+    idf = idf_scores.get(term, 0.0)
+    if idf == 0:
+        return 0.0
+
+    doc = doc_stats.get("docs", {}).get(doc_path, {})
+    tf = doc.get("tf", {}).get(term, 0)
+    if tf == 0:
+        return 0.0
+
+    dl = doc.get("dl", 1)
+    avg_dl = doc_stats.get("avg_dl", 1.0) or 1.0  # Guard against zero
+
+    numerator = tf * (k1 + 1)
+    denominator = tf + k1 * (1 - b + b * (dl / avg_dl))
+
+    return idf * (numerator / denominator)
+
+
 def search(query: str, limit: int = 5) -> List[Dict]:
-    """Search indexed files with fuzzy matching, IDF weighting, bigrams, and intent detection."""
+    """
+    Search indexed files using BM25 scoring with query expansion,
+    bigram matching, intent detection, recency boosting, and MMR diversity.
+    """
+    if not isinstance(query, str) or not query.strip():
+        return []
+
     index = load_index()
     idf_scores = index.get("idf", {})
+    doc_stats = index.get("doc_stats", {})
 
-    # Detect query intent and get weight adjustments
+    # Detect query intent
     intent, weight_adjustments = detect_query_intent(query)
 
-    # Base weights
-    WEIGHTS = {
-        "title": 15,
-        "title_word": 8,
-        "tags": 10,
-        "keywords": 5,
-        "category": 4,
-        "path": 2,
-        "preview": 1,
-        "bigram": 25
-    }
-
-    # Apply intent-based weight adjustments
-    for field, multiplier in weight_adjustments.items():
-        if field in WEIGHTS:
-            WEIGHTS[field] *= multiplier
-
-    # Parse query - remove stopwords but keep important terms
+    # Parse query terms
     query_terms = []
     for word in query.lower().split():
         normalized = normalize_word(word)
         if normalized and len(normalized) > 1:
-            # Keep the word even if it's a stopword if it seems intentional
             if normalized not in STOPWORDS or len(query.split()) <= 2:
                 query_terms.append(normalized)
 
     if not query_terms:
         query_terms = [normalize_word(w) for w in query.lower().split() if normalize_word(w)]
 
+    # Expand query with synonyms: returns [(term, weight), ...]
+    expanded = expand_query(query_terms)
+
+    # Build weighted term map (stemmed), keeping highest weight per term
+    term_weights: Dict[str, float] = {}
+    for term, weight in expanded:
+        stemmed = porter_stem(term)
+        if stemmed and stemmed not in STOPWORDS:
+            term_weights[stemmed] = max(term_weights.get(stemmed, 0), weight)
+
     # Extract bigrams from query
     query_bigrams = []
-    normalized_query_words = [normalize_word(w) for w in query.lower().split()
-                              if normalize_word(w) not in STOPWORDS and len(normalize_word(w)) > 1]
-    for i in range(len(normalized_query_words) - 1):
-        query_bigrams.append(f"{porter_stem(normalized_query_words[i])}-{porter_stem(normalized_query_words[i+1])}")
+    normalized_words = [normalize_word(w) for w in query.lower().split()
+                        if normalize_word(w) not in STOPWORDS and len(normalize_word(w)) > 1]
+    for i in range(len(normalized_words) - 1):
+        query_bigrams.append(f"{porter_stem(normalized_words[i])}-{porter_stem(normalized_words[i+1])}")
 
     results = []
 
     for entry in index.get("files", []):
+        path = entry.get("path", "")
         score = 0.0
 
-        # Check title (highest weight)
-        title = entry.get("title", "").lower()
-        for term in query_terms:
-            stemmed_term = porter_stem(term)
-            term_idf = idf_scores.get(stemmed_term, 1.0)
+        # BM25 scoring across all weighted terms
+        for term, weight in term_weights.items():
+            score += bm25_score(term, path, doc_stats, idf_scores) * weight
 
-            match_score = fuzzy_match(term, title)
-            if match_score > 0:
-                score += WEIGHTS["title"] * match_score * term_idf
-            # Also check individual title words
-            for title_word in title.split():
-                word_score = fuzzy_match(term, title_word)
-                if word_score > 0.5:
-                    score += WEIGHTS["title_word"] * word_score * term_idf
-
-        # Check tags (high weight)
-        tags = entry.get("tags", [])
-        if isinstance(tags, list):
-            for tag in tags:
-                if not isinstance(tag, str):
-                    continue
-                for term in query_terms:
-                    stemmed_term = porter_stem(term)
-                    term_idf = idf_scores.get(stemmed_term, 1.0)
-                    match_score = fuzzy_match(term, tag)
-                    if match_score > 0:
-                        score += WEIGHTS["tags"] * match_score * term_idf
-
-        # Check keywords (medium weight)
-        keywords = entry.get("keywords", [])
-        if isinstance(keywords, list):
-            for keyword in keywords:
-                if not isinstance(keyword, str):
-                    continue
-                for term in query_terms:
-                    stemmed_term = porter_stem(term)
-                    term_idf = idf_scores.get(stemmed_term, 1.0)
-                    match_score = fuzzy_match(term, keyword)
-                    if match_score > 0:
-                        score += WEIGHTS["keywords"] * match_score * term_idf
-
-        # Check bigrams (very high weight for phrase matches)
+        # Bigram bonus (phrase matching)
         entry_bigrams = entry.get("bigrams", [])
         for qbigram in query_bigrams:
             for ebigram in entry_bigrams:
                 if qbigram == ebigram:
-                    score += WEIGHTS["bigram"]  # Exact bigram match
+                    score += 5.0
                 elif qbigram in ebigram or ebigram in qbigram:
-                    score += WEIGHTS["bigram"] * 0.5  # Partial bigram match
+                    score += 2.5
 
-        # Check category (medium weight)
-        category = entry.get("category", "").lower()
-        for term in query_terms:
-            stemmed_term = porter_stem(term)
-            term_idf = idf_scores.get(stemmed_term, 1.0)
-            for cat_part in category.replace("/", " ").split():
-                match_score = fuzzy_match(term, cat_part)
-                if match_score > 0:
-                    score += WEIGHTS["category"] * match_score * term_idf
+        # Fuzzy fallback: catch matches that BM25 missed (typos, partial matches)
+        if score == 0:
+            title = entry.get("title", "").lower()
+            for term in query_terms:
+                match_score = fuzzy_match(term, title)
+                if match_score > 0.5:
+                    score += match_score * 3.0
 
-        # Check path (low weight but useful)
-        path = entry.get("path", "").lower()
-        for term in query_terms:
-            if term in path:
-                score += WEIGHTS["path"]
+            tags = entry.get("tags", [])
+            if isinstance(tags, list):
+                for tag in tags:
+                    if isinstance(tag, str):
+                        for term in query_terms:
+                            match_score = fuzzy_match(term, tag)
+                            if match_score > 0.5:
+                                score += match_score * 2.0
 
-        # Check preview (lowest weight)
-        preview = entry.get("preview", "").lower()
-        for term in query_terms:
-            if term in preview:
-                score += WEIGHTS["preview"]
-            # Boost if multiple terms found in preview
-            term_count = preview.count(term)
-            if term_count > 1:
-                score += WEIGHTS["preview"] * 0.5 * min(term_count, 3)
+        # Intent-based boost
+        if intent != "general" and score > 0:
+            for field, multiplier in weight_adjustments.items():
+                if field == "title":
+                    title_lower = entry.get("title", "").lower()
+                    for term in query_terms:
+                        if porter_stem(term) in [porter_stem(normalize_word(w)) for w in title_lower.split()]:
+                            score *= multiplier
+                            break
+                elif field == "tags":
+                    tags = entry.get("tags", [])
+                    if isinstance(tags, list):
+                        tag_stems = {porter_stem(normalize_word(t)) for t in tags if isinstance(t, str)}
+                        for term in query_terms:
+                            if porter_stem(term) in tag_stems:
+                                score *= multiplier
+                                break
+                elif field == "preview":
+                    preview = entry.get("preview", "").lower()
+                    for term in query_terms:
+                        if term in preview:
+                            score *= min(multiplier, 1.5)
+                            break
 
         if score > 0:
             results.append({"entry": entry, "score": score})
 
-    # Sort by score
+    # Sort by BM25 score
     results.sort(key=lambda x: x["score"], reverse=True)
 
-    return results[:limit]
+    # Recency boost: gently favor recently modified blocks
+    for result in results:
+        modified = result["entry"].get("modified", "")
+        try:
+            mod_date = datetime.fromisoformat(modified)
+            age_days = (datetime.now() - mod_date).days
+            # ~10% boost for fresh docs, decays over 30 days
+            recency_factor = 1.0 + 0.1 / (1.0 + age_days / 30.0)
+            result["score"] *= recency_factor
+        except (ValueError, TypeError):
+            pass
+
+    # Re-sort after recency
+    results.sort(key=lambda x: x["score"], reverse=True)
+
+    # MMR diversity: reduce redundancy in top results
+    if len(results) > 1:
+        selected = [results[0]]
+        remaining = results[1:]
+
+        while remaining and len(selected) < limit:
+            best_idx = 0
+            best_mmr = -float("inf")
+
+            for i, candidate in enumerate(remaining):
+                cand_terms = set(candidate["entry"].get("keywords", []))
+                max_overlap = 0.0
+                for sel in selected:
+                    sel_terms = set(sel["entry"].get("keywords", []))
+                    if cand_terms and sel_terms:
+                        union = len(cand_terms | sel_terms)
+                        if union > 0:
+                            max_overlap = max(max_overlap,
+                                              len(cand_terms & sel_terms) / union)
+
+                # MMR: 0.7 * relevance - 0.3 * redundancy_penalty
+                mmr = 0.7 * candidate["score"] - 0.3 * max_overlap * candidate["score"]
+
+                if mmr > best_mmr:
+                    best_mmr = mmr
+                    best_idx = i
+
+            selected.append(remaining.pop(best_idx))
+
+        results = selected
+
+    final = results[:limit]
+
+    # Log usage for health tracking
+    log_usage(query, final)
+
+    return final
 
 
 def display_results(results: List[Dict], verbose: bool = False):
@@ -768,7 +1066,7 @@ def display_results(results: List[Dict], verbose: bool = False):
     for i, result in enumerate(results, 1):
         entry = result["entry"]
         score = result["score"]
-        filepath = MEMORY_DIR / entry["path"]
+        is_pg = entry.get("path", "").startswith("pg://")
 
         print(f"\n{i}. {entry['title']}")
         print(f"   Path: {entry['path']}")
@@ -784,8 +1082,12 @@ def display_results(results: List[Dict], verbose: bool = False):
 
         if verbose:
             print(f"   Score: {score:.1f}")
-            if filepath.exists():
+            if is_pg:
                 print(f"   Preview: {entry.get('preview', '')[:150]}...")
+            else:
+                filepath = MEMORY_DIR / entry["path"]
+                if filepath.exists():
+                    print(f"   Preview: {entry.get('preview', '')[:150]}...")
 
 
 def list_files():
@@ -815,8 +1117,15 @@ def list_files():
 
 
 def get_file_content(path: str) -> str:
-    """Get full content of a file for context injection."""
+    """Get full content of a file (or PG learning) for context injection."""
     if not isinstance(path, str):
+        return ""
+
+    # Route pg:// paths to PostgreSQL provider
+    if path.startswith("pg://learning/"):
+        learning_id = path.replace("pg://learning/", "")
+        if HAS_PG_PROVIDER and PG_ENABLED:
+            return pg_fetch_learning_content(PG_DATABASE_URL, learning_id)
         return ""
 
     filepath = MEMORY_DIR / path
@@ -835,6 +1144,277 @@ def get_file_content(path: str) -> str:
         _, body = parse_frontmatter(content)
         return body
     return ""
+
+
+def generate_health_report() -> str:
+    """
+    Generate a comprehensive health report for knowledge blocks.
+
+    Includes: freshness analysis, usage statistics, knowledge gaps,
+    and actionable suggestions.
+    """
+    index = load_index()
+    files = index.get("files", [])
+
+    if not files:
+        return "No blocks indexed. Nothing to report."
+
+    now = datetime.now()
+    fresh, aging, stale = [], [], []
+
+    for entry in files:
+        modified = entry.get("modified", "")
+        try:
+            mod_date = datetime.fromisoformat(modified)
+            age_days = (now - mod_date).days
+        except (ValueError, TypeError):
+            age_days = 999
+
+        entry_info = {
+            "title": entry["title"],
+            "path": entry["path"],
+            "age_days": age_days,
+        }
+
+        if age_days < 30:
+            fresh.append(entry_info)
+        elif age_days < 90:
+            aging.append(entry_info)
+        else:
+            stale.append(entry_info)
+
+    total = len(files)
+    lines = [
+        "Block Health Report",
+        "=" * 40,
+        f"Total blocks: {total}",
+        f"Fresh (< 30 days): {len(fresh)} ({100 * len(fresh) // total}%)",
+        f"Aging (30-90 days): {len(aging)} ({100 * len(aging) // total}%)",
+        f"Stale (> 90 days): {len(stale)} ({100 * len(stale) // total}%)",
+        "",
+    ]
+
+    # Usage statistics
+    usage = load_usage_log()
+    if usage:
+        # Most retrieved blocks
+        retrieval_count: Dict[str, int] = {}
+        for record in usage:
+            for path in record.get("results", []):
+                retrieval_count[path] = retrieval_count.get(path, 0) + 1
+
+        if retrieval_count:
+            sorted_retrievals = sorted(retrieval_count.items(), key=lambda x: -x[1])
+            lines.append("Most Retrieved")
+            lines.append("-" * 40)
+            for path, count in sorted_retrievals[:5]:
+                lines.append(f"  {path} ({count} retrievals)")
+            lines.append("")
+
+        # Never retrieved blocks
+        all_paths = {entry["path"] for entry in files}
+        retrieved_paths = set(retrieval_count.keys())
+        never_retrieved = all_paths - retrieved_paths
+        if never_retrieved:
+            lines.append("Never Retrieved")
+            lines.append("-" * 40)
+            for path in sorted(never_retrieved):
+                lines.append(f"  {path}")
+            lines.append("")
+
+        # Knowledge gaps: queries with no results
+        missed_queries: Dict[str, int] = {}
+        for record in usage:
+            if not record.get("hit", True):
+                q = record.get("query", "").lower().strip()
+                if q:
+                    missed_queries[q] = missed_queries.get(q, 0) + 1
+
+        if missed_queries:
+            sorted_gaps = sorted(missed_queries.items(), key=lambda x: -x[1])
+            lines.append("Knowledge Gaps (unmatched queries)")
+            lines.append("-" * 40)
+            for query, count in sorted_gaps[:10]:
+                lines.append(f"  \"{query}\" ({count} missed)")
+            lines.append("")
+
+        lines.append(f"Total searches logged: {len(usage)}")
+        hit_count = sum(1 for r in usage if r.get("hit", False))
+        if usage:
+            lines.append(f"Hit rate: {100 * hit_count // len(usage)}%")
+        lines.append("")
+
+    # Stale blocks detail
+    if stale:
+        lines.append("Stale Blocks (consider updating)")
+        lines.append("-" * 40)
+        for s in sorted(stale, key=lambda x: -x["age_days"]):
+            lines.append(f"  {s['title']} ({s['path']}) - {s['age_days']} days old")
+        lines.append("")
+
+    # IDF stats (distinctive terms)
+    idf = index.get("idf", {})
+    if idf:
+        sorted_idf = sorted(idf.items(), key=lambda x: x[1], reverse=True)
+        lines.append("Most Distinctive Terms (high IDF)")
+        lines.append("-" * 40)
+        for term, score in sorted_idf[:10]:
+            lines.append(f"  {term}: {score:.2f}")
+        lines.append("")
+
+    # Suggestions
+    suggestions = []
+    if stale:
+        oldest = max(stale, key=lambda x: x["age_days"])
+        suggestions.append(f"Update: {oldest['path']} ({oldest['age_days']} days old)")
+    if usage:
+        missed = {q for q, c in missed_queries.items() if c >= 2} if missed_queries else set()
+        for q in list(missed)[:3]:
+            suggestions.append(f"Create block for: \"{q}\" ({missed_queries[q]} missed searches)")
+    if usage and never_retrieved:
+        nr_list = sorted(never_retrieved)
+        if len(nr_list) > 2:
+            suggestions.append(f"Review {len(nr_list)} never-retrieved blocks (may be outdated)")
+
+    if suggestions:
+        lines.append("Suggestions")
+        lines.append("-" * 40)
+        for s in suggestions:
+            lines.append(f"  - {s}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def estimate_tokens(text: str) -> int:
+    """Estimate token count for text. Roughly 1 token per 4 characters."""
+    return len(text) // 4
+
+
+def _keyword_overlap(entry_a: Dict, entry_b: Dict) -> float:
+    """
+    Calculate keyword overlap ratio between two index entries.
+    Returns 0.0 (no overlap) to 1.0 (identical keywords).
+    """
+    kw_a = set(entry_a.get("keywords", []))
+    kw_b = set(entry_b.get("keywords", []))
+    if not kw_a or not kw_b:
+        return 0.0
+    union = len(kw_a | kw_b)
+    if union == 0:
+        return 0.0
+    return len(kw_a & kw_b) / union
+
+
+def inject_context(query: str, limit: int = 5, max_tokens: Optional[int] = None) -> str:
+    """
+    Search and inject context with token budget awareness, deduplication,
+    and priority-based content selection.
+
+    Returns formatted text ready for LLM context injection, including:
+    - Metadata header (block count, token usage, query)
+    - Full content for top blocks (within budget)
+    - Summaries for lower-ranked blocks that don't fit
+    - Title+tags references for the rest
+
+    Args:
+        query: Search query
+        limit: Max number of blocks to consider
+        max_tokens: Token budget (default: MAX_INJECT_TOKENS)
+    """
+    if max_tokens is None:
+        max_tokens = MAX_INJECT_TOKENS
+
+    results = search(query, limit=limit)
+    if not results:
+        return f"[BloxCue: No blocks found for: \"{query}\"]"
+
+    # Deduplicate: skip blocks with >60% keyword overlap with already-selected
+    deduped = [results[0]]
+    for result in results[1:]:
+        dominated = False
+        for selected in deduped:
+            if _keyword_overlap(result["entry"], selected["entry"]) > 0.6:
+                dominated = True
+                break
+        if not dominated:
+            deduped.append(result)
+
+    # Build injection with token budget
+    blocks_output = []
+    tokens_used = 0
+    block_num = 0
+    summary_token_limit = 75  # ~300 chars / 4
+
+    for result in deduped:
+        entry = result["entry"]
+        score = result["score"]
+        path = entry["path"]
+        title = entry.get("title", path)
+        tags = entry.get("tags", [])
+        tags_str = ", ".join(str(t) for t in tags if t) if isinstance(tags, list) else ""
+        modified = entry.get("modified", "unknown")
+
+        # Try to get age in days
+        age_str = "unknown"
+        try:
+            mod_date = datetime.fromisoformat(modified)
+            age_days = (datetime.now() - mod_date).days
+            if age_days == 0:
+                age_str = "today"
+            elif age_days == 1:
+                age_str = "1 day ago"
+            else:
+                age_str = f"{age_days} days ago"
+        except (ValueError, TypeError):
+            pass
+
+        block_num += 1
+
+        # Get full content
+        content = get_file_content(path)
+        content_tokens = estimate_tokens(content) if content else 0
+
+        # Header for this block
+        header = f"### Block {block_num}: {title} (score: {score:.1f}, updated: {age_str})"
+        if tags_str:
+            header += f"\nTags: {tags_str}"
+        header_tokens = estimate_tokens(header)
+
+        remaining = max_tokens - tokens_used
+
+        if remaining <= header_tokens + 10:
+            # No room even for a reference - stop
+            break
+
+        if content and content_tokens + header_tokens <= remaining:
+            # Full content fits
+            block_text = f"{header}\n\n{content}"
+            tokens_used += estimate_tokens(block_text)
+            blocks_output.append(block_text)
+
+        elif content and header_tokens + summary_token_limit <= remaining:
+            # Summary fits
+            summary = content[:300].rstrip()
+            if len(content) > 300:
+                summary += "..."
+            block_text = f"{header}\n[Summary - full block at: {path}]\n\n{summary}"
+            tokens_used += estimate_tokens(block_text)
+            blocks_output.append(block_text)
+
+        else:
+            # Reference only
+            ref = f"{header}\n[Reference only - retrieve full block with: get_block(\"{path}\")]"
+            tokens_used += estimate_tokens(ref)
+            blocks_output.append(ref)
+
+    # Build metadata header
+    meta = f"[BloxCue: Injected {len(blocks_output)} block(s), ~{tokens_used} tokens, query: \"{query}\"]"
+
+    parts = [meta, "---"]
+    parts.extend(blocks_output)
+
+    return "\n\n".join(parts)
 
 
 def main():
@@ -860,12 +1440,18 @@ def main():
         "--limit", "-n", type=int, default=5, help="Max results (default: 5)"
     )
     parser.add_argument(
+        "--health", action="store_true", help="Show block health report"
+    )
+    parser.add_argument(
         "--json", "-j", action="store_true", help="Output as JSON"
     )
 
     args = parser.parse_args()
 
-    if args.file:
+    if args.health:
+        print(generate_health_report())
+
+    elif args.file:
         filepath = Path(args.file)
         if not filepath.is_absolute():
             filepath = MEMORY_DIR / filepath
