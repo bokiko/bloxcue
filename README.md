@@ -46,28 +46,29 @@
 ## Table of Contents
 
 1. [The Story](#the-story)
-2. [Architecture](#architecture)
-3. [Features](#features)
-4. [MCP Server](#mcp-server)
-5. [PostgreSQL Integration](#postgresql-integration)
-6. [Who is this for?](#who-is-this-for)
-7. [How it works](#how-it-works)
-8. [Requirements](#requirements)
-9. [Quick Start](#quick-start)
-10. [Enable Auto-Retrieval](#enable-auto-retrieval)
-11. [After Installation](#after-installation)
-12. [For Existing Claude Users](#for-existing-claude-users)
-13. [Token Savings](#token-savings)
-14. [Directory Structure](#directory-structure)
-15. [Commands Reference](#commands-reference)
-16. [Configuration](#configuration)
-17. [Best Practices](#best-practices)
-18. [FAQ](#faq)
-19. [Troubleshooting](#troubleshooting)
-20. [Security](#security)
-21. [Roadmap](#roadmap)
-22. [Contributing](#contributing)
-23. [Credits](#credits)
+2. [Quick Start](#quick-start)
+3. [Upgrading from v1?](#upgrading-from-v1)
+4. [Architecture](#architecture)
+5. [Features](#features)
+6. [MCP Server](#mcp-server)
+7. [PostgreSQL Integration](#postgresql-integration)
+8. [Who is this for?](#who-is-this-for)
+9. [How it works](#how-it-works)
+10. [Requirements](#requirements)
+11. [Enable Auto-Retrieval](#enable-auto-retrieval)
+12. [After Installation](#after-installation)
+13. [For Existing Claude Users](#for-existing-claude-users)
+14. [Token Savings](#token-savings)
+15. [Directory Structure](#directory-structure)
+16. [Commands Reference](#commands-reference)
+17. [Configuration](#configuration)
+18. [Best Practices](#best-practices)
+19. [FAQ](#faq)
+20. [Troubleshooting](#troubleshooting)
+21. [Security](#security)
+22. [Roadmap](#roadmap)
+23. [Contributing](#contributing)
+24. [Credits](#credits)
 
 ---
 
@@ -84,6 +85,132 @@ After using [Continuous-Claude](https://github.com/parcadei/Continuous-Claude-v3
 That's **BloxCue** - intelligent context blocks that get loaded when you need them.
 
 **v2** takes it further: an MCP server with 6 tools, token-budgeted context injection, and optional PostgreSQL integration that unifies your curated markdown blocks with learned memory from [Continuous-Claude](https://github.com/parcadei/Continuous-Claude-v3).
+
+---
+
+## Quick Start
+
+Choose your integration:
+
+| Mode | Best For | Setup |
+|------|----------|-------|
+| **MCP Server** (v2.0) | Any MCP client (Claude, Cursor, Windsurf) | Add to `mcp_config.json` |
+| **Auto-Injection Hooks** | Claude Code with automatic context | Run `install.sh` |
+
+> **No database? No problem.** BloxCue works 100% with markdown files only. PostgreSQL is an optional add-on for [Continuous-Claude](https://github.com/parcadei/Continuous-Claude-v3) users.
+
+### Option 1: Let Claude Install (Recommended)
+
+Copy and paste this to Claude:
+
+```
+Set up BloxCue for intelligent context management.
+
+1. Clone https://github.com/bokiko/bloxcue to a temp location
+2. Run ./install.sh and guide me through the options:
+   - Scope: Global, Project, or Both
+   - Directory structure preference
+3. Set up the auto-retrieval hook in ~/.claude/settings.json
+4. Create a sample block to test it works
+5. Clean up the cloned repo after install
+
+If I don't have Continuous-Claude yet, set that up first from:
+https://github.com/parcadei/Continuous-Claude-v3
+```
+
+Claude will handle the technical details while asking for your preferences.
+
+---
+
+### Option 2: Manual Installation
+
+#### Step 1: Install Continuous-Claude
+
+Follow our [Continuous-Claude v3](https://github.com/parcadei/Continuous-Claude-v3).
+
+#### Step 2: Clone BloxCue
+
+```bash
+git clone https://github.com/bokiko/bloxcue.git
+cd bloxcue
+```
+
+#### Step 3: Run the installer
+
+```bash
+./install.sh
+```
+
+The installer will ask you:
+
+**Where to install?**
+- **Global** (`~/.claude-memory`) - knowledge used across all projects
+- **Project** (`./claude-memory`) - project-specific docs only
+- **Both** - recommended for most users
+
+**How to organize?**
+- **By subject** - guides, references, projects (general use)
+- **By project** - project-a, project-b (freelancers/agencies)
+- **Developer** - apis, databases, deployment, frontend, backend
+- **DevOps** - servers, networking, monitoring, security
+- **Minimal** - just docs and notes
+- **Custom** - you specify
+
+#### Step 4: Add your first block
+
+```bash
+nano ~/.claude-memory/guides/deployment.md
+```
+
+```markdown
+---
+title: Production Deployment
+category: guides
+tags: [deployment, production, devops]
+---
+
+# Production Deployment
+
+## Prerequisites
+- SSH access to production server
+- Environment variables configured
+
+## Deploy Steps
+1. Run tests locally
+2. Push to main branch
+3. SSH into server
+4. Pull latest changes
+5. Run migrations
+6. Restart services
+
+## Rollback
+1. Revert to previous commit
+2. Run down migrations
+3. Restart services
+```
+
+#### Step 5: Index your blocks
+
+```bash
+python3 ~/.claude-memory/scripts/indexer.py
+```
+
+#### Step 6: Test it
+
+```bash
+python3 ~/.claude-memory/scripts/indexer.py --search "deployment"
+```
+
+---
+
+## Upgrading from v1?
+
+```bash
+git pull
+# Done. Seriously.
+```
+
+MCP server and PostgreSQL are opt-in additions. Your existing blocks, hooks, and workflows continue unchanged. Turn on new features when you're ready.
 
 ---
 
@@ -382,112 +509,6 @@ With PostgreSQL integration enabled, BloxCue becomes the **unified search interf
 If you prefer manual setup, follow our [Continuous-Claude v3](https://github.com/parcadei/Continuous-Claude-v3) first.
 
 > **Credit:** Continuous-Claude was created by [parcadei](https://github.com/parcadei). Check out [Continuous-Claude v3](https://github.com/parcadei/Continuous-Claude-v3).
-
----
-
-## Quick Start
-
-### Option 1: Let Claude Install (Recommended)
-
-Copy and paste this to Claude:
-
-```
-Set up BloxCue for intelligent context management.
-
-1. Clone https://github.com/bokiko/bloxcue to a temp location
-2. Run ./install.sh and guide me through the options:
-   - Scope: Global, Project, or Both
-   - Directory structure preference
-3. Set up the auto-retrieval hook in ~/.claude/settings.json
-4. Create a sample block to test it works
-5. Clean up the cloned repo after install
-
-If I don't have Continuous-Claude yet, set that up first from:
-https://github.com/parcadei/Continuous-Claude-v3
-```
-
-Claude will handle the technical details while asking for your preferences.
-
----
-
-### Option 2: Manual Installation
-
-#### Step 1: Install Continuous-Claude
-
-Follow our [Continuous-Claude v3](https://github.com/parcadei/Continuous-Claude-v3).
-
-#### Step 2: Clone BloxCue
-
-```bash
-git clone https://github.com/bokiko/bloxcue.git
-cd bloxcue
-```
-
-#### Step 3: Run the installer
-
-```bash
-./install.sh
-```
-
-The installer will ask you:
-
-**Where to install?**
-- **Global** (`~/.claude-memory`) - knowledge used across all projects
-- **Project** (`./claude-memory`) - project-specific docs only
-- **Both** - recommended for most users
-
-**How to organize?**
-- **By subject** - guides, references, projects (general use)
-- **By project** - project-a, project-b (freelancers/agencies)
-- **Developer** - apis, databases, deployment, frontend, backend
-- **DevOps** - servers, networking, monitoring, security
-- **Minimal** - just docs and notes
-- **Custom** - you specify
-
-#### Step 4: Add your first block
-
-```bash
-nano ~/.claude-memory/guides/deployment.md
-```
-
-```markdown
----
-title: Production Deployment
-category: guides
-tags: [deployment, production, devops]
----
-
-# Production Deployment
-
-## Prerequisites
-- SSH access to production server
-- Environment variables configured
-
-## Deploy Steps
-1. Run tests locally
-2. Push to main branch
-3. SSH into server
-4. Pull latest changes
-5. Run migrations
-6. Restart services
-
-## Rollback
-1. Revert to previous commit
-2. Run down migrations
-3. Restart services
-```
-
-#### Step 5: Index your blocks
-
-```bash
-python3 ~/.claude-memory/scripts/indexer.py
-```
-
-#### Step 6: Test it
-
-```bash
-python3 ~/.claude-memory/scripts/indexer.py --search "deployment"
-```
 
 ---
 
