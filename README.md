@@ -97,20 +97,26 @@ Choose your integration:
 | **MCP Server** (v2.0) | Any MCP client (Claude, Cursor, Windsurf) | Add to `mcp_config.json` |
 | **Auto-Injection Hooks** | Claude Code with automatic context | Run `install.sh` |
 
+> **AI assistants:** See [AI_SETUP.md](AI_SETUP.md) for structured setup instructions.
+
 > **No database? No problem.** BloxCue works 100% with markdown files only. PostgreSQL is an optional add-on for [Continuous-Claude](https://github.com/parcadei/Continuous-Claude-v3) users.
 
-### Option 1: Let Claude Install (Recommended)
+### Option 1: Let Your AI Install It (Recommended)
 
-Copy and paste this to Claude:
+Paste this into any AI assistant (Claude Code, Cursor, Windsurf, etc.):
 
 ```
 Set up BloxCue from https://github.com/bokiko/bloxcue
 
 1. Clone to ~/bloxcue (or wherever I prefer)
-2. Run ./install.sh — ask me about scope (Global/Project/Both) and directory layout
-3. Verify it works: python3 ~/.claude-memory/scripts/indexer.py --search "test"
-4. Help me create my first block from something in my CLAUDE.md
+2. Read AI_SETUP.md for setup instructions
+3. Run ./install.sh --auto (or ask me about scope/structure preferences)
+4. Configure MCP server per AI_SETUP.md Step 5
+5. Verify: python3 ~/.claude-memory/scripts/indexer.py --search "test"
+6. Help me create my first block from something in my CLAUDE.md
 ```
+
+Your AI reads [AI_SETUP.md](AI_SETUP.md) and handles everything — no manual steps needed.
 
 ---
 

@@ -12,26 +12,50 @@ NC='\033[0m' # No Color
 # Detect script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Check for --uninstall flag
-if [ "$1" = "--uninstall" ]; then
-    echo -e "${YELLOW}Uninstalling bloxcue...${NC}"
-    echo ""
+# Parse arguments
+AUTO_MODE=0
+SCOPE_ARG=""
+STRUCTURE_ARG=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --uninstall)
+            echo -e "${YELLOW}Uninstalling bloxcue...${NC}"
+            echo ""
+            if [ -f "$HOME/.claude/hooks/memory-retrieve.sh" ]; then
+                rm -f "$HOME/.claude/hooks/memory-retrieve.sh"
+                echo "  Removed: ~/.claude/hooks/memory-retrieve.sh"
+            fi
+            echo ""
+            echo -e "${YELLOW}Note: Your memory files are preserved.${NC}"
+            echo "  To fully remove, delete these manually:"
+            echo "    rm -rf ~/.claude-memory"
+            echo "    rm -rf ./claude-memory"
+            echo ""
+            echo "  Also remove the hook from ~/.claude/settings.json"
+            echo ""
+            exit 0
+            ;;
+        --auto)
+            AUTO_MODE=1
+            ;;
+        --scope)
+            shift
+            SCOPE_ARG="$1"
+            ;;
+        --structure)
+            shift
+            STRUCTURE_ARG="$1"
+            ;;
+    esac
+    shift
+done
 
-    # Remove hooks
-    if [ -f "$HOME/.claude/hooks/memory-retrieve.sh" ]; then
-        rm -f "$HOME/.claude/hooks/memory-retrieve.sh"
-        echo "  Removed: ~/.claude/hooks/memory-retrieve.sh"
-    fi
-
-    echo ""
-    echo -e "${YELLOW}Note: Your memory files are preserved.${NC}"
-    echo "  To fully remove, delete these manually:"
-    echo "    rm -rf ~/.claude-memory"
-    echo "    rm -rf ./claude-memory"
-    echo ""
-    echo "  Also remove the hook from ~/.claude/settings.json"
-    echo ""
-    exit 0
+# Also check env vars as fallbacks for --auto mode
+if [ -n "$BLOXCUE_SCOPE" ] && [ -z "$SCOPE_ARG" ]; then
+    SCOPE_ARG="$BLOXCUE_SCOPE"
+fi
+if [ -n "$BLOXCUE_STRUCTURE" ] && [ -z "$STRUCTURE_ARG" ]; then
+    STRUCTURE_ARG="$BLOXCUE_STRUCTURE"
 fi
 
 # Banner
@@ -76,8 +100,12 @@ echo ""
 echo "  3) Both (recommended)"
 echo "     Global for personal stuff + project for project stuff"
 echo ""
-read -p "Choose [1/2/3] (default: 3): " SCOPE_CHOICE
-SCOPE_CHOICE=${SCOPE_CHOICE:-3}
+if [ "$AUTO_MODE" = "1" ]; then
+    SCOPE_CHOICE=${SCOPE_ARG:-3}
+else
+    read -p "Choose [1/2/3] (default: 3): " SCOPE_CHOICE
+    SCOPE_CHOICE=${SCOPE_CHOICE:-3}
+fi
 
 case $SCOPE_CHOICE in
     1) INSTALL_PATHS=("$HOME/.claude-memory") ;;
@@ -112,8 +140,12 @@ echo "     docs/ notes/"
 echo ""
 echo "  6) Custom (you specify)"
 echo ""
-read -p "Choose [1-6] (default: 1): " STRUCTURE_CHOICE
-STRUCTURE_CHOICE=${STRUCTURE_CHOICE:-1}
+if [ "$AUTO_MODE" = "1" ]; then
+    STRUCTURE_CHOICE=${STRUCTURE_ARG:-1}
+else
+    read -p "Choose [1-6] (default: 1): " STRUCTURE_CHOICE
+    STRUCTURE_CHOICE=${STRUCTURE_CHOICE:-1}
+fi
 
 case $STRUCTURE_CHOICE in
     1)
@@ -121,9 +153,13 @@ case $STRUCTURE_CHOICE in
         ;;
     2)
         echo ""
-        read -p "Enter project/client names (comma-separated): " PROJECTS
-        if [ -z "$PROJECTS" ]; then
+        if [ "$AUTO_MODE" = "1" ]; then
             PROJECTS="project-a,project-b"
+        else
+            read -p "Enter project/client names (comma-separated): " PROJECTS
+            if [ -z "$PROJECTS" ]; then
+                PROJECTS="project-a,project-b"
+            fi
         fi
         IFS=',' read -ra PROJECT_ARRAY <<< "$PROJECTS"
         FOLDERS=()
@@ -143,8 +179,12 @@ case $STRUCTURE_CHOICE in
         ;;
     6)
         echo ""
-        echo "Examples: guides, projects, apis, clients, notes"
-        read -p "Enter folder names (comma-separated): " CUSTOM_FOLDERS
+        if [ "$AUTO_MODE" = "1" ]; then
+            CUSTOM_FOLDERS="docs,notes"
+        else
+            echo "Examples: guides, projects, apis, clients, notes"
+            read -p "Enter folder names (comma-separated): " CUSTOM_FOLDERS
+        fi
         if [ -z "$CUSTOM_FOLDERS" ]; then
             CUSTOM_FOLDERS="docs,notes"
         fi
@@ -175,8 +215,12 @@ done
 echo ""
 echo -e "  ${GREEN}Auto-retrieval:${NC} Enabled (hooks will be installed)"
 echo ""
-read -p "Proceed? [Y/n]: " CONFIRM
-CONFIRM=${CONFIRM:-Y}
+if [ "$AUTO_MODE" = "1" ]; then
+    CONFIRM="Y"
+else
+    read -p "Proceed? [Y/n]: " CONFIRM
+    CONFIRM=${CONFIRM:-Y}
+fi
 
 if [ "$CONFIRM" != "Y" ] && [ "$CONFIRM" != "y" ]; then
     echo "Installation cancelled."
