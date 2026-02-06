@@ -47,28 +47,27 @@
 
 1. [The Story](#the-story)
 2. [Quick Start](#quick-start)
-3. [Upgrading from v1?](#upgrading-from-v1)
-4. [Architecture](#architecture)
-5. [Features](#features)
-6. [MCP Server](#mcp-server)
-7. [PostgreSQL Integration](#postgresql-integration)
-8. [Who is this for?](#who-is-this-for)
-9. [How it works](#how-it-works)
-10. [Requirements](#requirements)
-11. [Enable Auto-Retrieval](#enable-auto-retrieval)
-12. [After Installation](#after-installation)
-13. [For Existing Claude Users](#for-existing-claude-users)
-14. [Token Savings](#token-savings)
-15. [Directory Structure](#directory-structure)
-16. [Commands Reference](#commands-reference)
-17. [Configuration](#configuration)
-18. [Best Practices](#best-practices)
-19. [FAQ](#faq)
-20. [Troubleshooting](#troubleshooting)
-21. [Security](#security)
-22. [Roadmap](#roadmap)
-23. [Contributing](#contributing)
-24. [Credits](#credits)
+3. [Architecture](#architecture)
+4. [Features](#features)
+5. [MCP Server](#mcp-server)
+6. [PostgreSQL Integration](#postgresql-integration)
+7. [Who is this for?](#who-is-this-for)
+8. [How it works](#how-it-works)
+9. [Requirements](#requirements)
+10. [Enable Auto-Retrieval](#enable-auto-retrieval)
+11. [After Installation](#after-installation)
+12. [For Existing Claude Users](#for-existing-claude-users)
+13. [Token Savings](#token-savings)
+14. [Directory Structure](#directory-structure)
+15. [Commands Reference](#commands-reference)
+16. [Configuration](#configuration)
+17. [Best Practices](#best-practices)
+18. [FAQ](#faq)
+19. [Troubleshooting](#troubleshooting)
+20. [Security](#security)
+21. [Roadmap](#roadmap)
+22. [Contributing](#contributing)
+23. [Credits](#credits)
 
 ---
 
@@ -90,20 +89,16 @@ That's **BloxCue** - intelligent context blocks that get loaded when you need th
 
 ## Quick Start
 
-Choose your integration:
+**The easiest way to install or update BloxCue is to ask your AI to do it.** Paste one of the prompts below into Claude Code, Cursor, Windsurf, or any MCP-compatible assistant.
+
+> **No database? No problem.** BloxCue works 100% with markdown files only. PostgreSQL is an optional add-on for [Continuous-Claude](https://github.com/parcadei/Continuous-Claude-v3) users.
 
 | Mode | Best For | Setup |
 |------|----------|-------|
 | **MCP Server** (v2.0) | Any MCP client (Claude, Cursor, Windsurf) | Add to `mcp_config.json` |
 | **Auto-Injection Hooks** | Claude Code with automatic context | Run `install.sh` |
 
-> **AI assistants:** See [AI_SETUP.md](AI_SETUP.md) for structured setup instructions.
-
-> **No database? No problem.** BloxCue works 100% with markdown files only. PostgreSQL is an optional add-on for [Continuous-Claude](https://github.com/parcadei/Continuous-Claude-v3) users.
-
-### Option 1: Let Your AI Install It (Recommended)
-
-Paste this into any AI assistant (Claude Code, Cursor, Windsurf, etc.):
+### Install — Paste This to Your AI
 
 ```
 Set up BloxCue from https://github.com/bokiko/bloxcue
@@ -116,24 +111,32 @@ Set up BloxCue from https://github.com/bokiko/bloxcue
 6. Help me create my first block from something in my CLAUDE.md
 ```
 
-Your AI reads [AI_SETUP.md](AI_SETUP.md) and handles everything — no manual steps needed.
+---
+
+### Update — Paste This to Your AI
+
+```
+Update BloxCue to the latest version:
+1. cd ~/bloxcue && git pull
+2. Show me what's new and help me enable any new features
+```
+
+Or just run `cd ~/bloxcue && git pull` yourself — that's it.
 
 ---
 
-### Option 2: Manual Installation
+### Manual Installation (if you prefer)
 
-#### Step 1: Install Continuous-Claude
-
-Follow our [Continuous-Claude v3](https://github.com/parcadei/Continuous-Claude-v3).
-
-#### Step 2: Clone BloxCue
+#### Step 1: Clone BloxCue
 
 ```bash
 git clone https://github.com/bokiko/bloxcue.git
 cd bloxcue
 ```
 
-#### Step 3: Run the installer
+> **Optional:** Install [Continuous-Claude v3](https://github.com/parcadei/Continuous-Claude-v3) first if you want session memory + knowledge retrieval together.
+
+#### Step 2: Run the installer
 
 ```bash
 ./install.sh
@@ -154,7 +157,7 @@ The installer will ask you:
 - **Minimal** - just docs and notes
 - **Custom** - you specify
 
-#### Step 4: Add your first block
+#### Step 3: Add your first block
 
 ```bash
 nano ~/.claude-memory/guides/deployment.md
@@ -187,34 +190,16 @@ tags: [deployment, production, devops]
 3. Restart services
 ```
 
-#### Step 5: Index your blocks
+#### Step 4: Index your blocks
 
 ```bash
 python3 ~/.claude-memory/scripts/indexer.py
 ```
 
-#### Step 6: Test it
+#### Step 5: Test it
 
 ```bash
 python3 ~/.claude-memory/scripts/indexer.py --search "deployment"
-```
-
----
-
-## Upgrading from v1?
-
-```bash
-cd ~/bloxcue && git pull
-# Done. Seriously.
-```
-
-MCP server and PostgreSQL are opt-in additions. Your existing blocks, hooks, and workflows continue unchanged. Turn on new features when you're ready.
-
-Or paste this to Claude:
-
-```
-Update BloxCue to v2 by running git pull in my bloxcue directory.
-Show me what's new and help me enable MCP server if I haven't already.
 ```
 
 ---
