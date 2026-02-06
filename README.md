@@ -198,11 +198,18 @@ python3 ~/.claude-memory/scripts/indexer.py --search "deployment"
 ## Upgrading from v1?
 
 ```bash
-git pull
+cd ~/bloxcue && git pull
 # Done. Seriously.
 ```
 
 MCP server and PostgreSQL are opt-in additions. Your existing blocks, hooks, and workflows continue unchanged. Turn on new features when you're ready.
+
+Or paste this to Claude:
+
+```
+Update BloxCue to v2 by running git pull in my bloxcue directory.
+Show me what's new and help me enable MCP server if I haven't already.
+```
 
 ---
 
