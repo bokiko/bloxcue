@@ -2,11 +2,12 @@
 
 # BloxCue
 
-<h3>Intelligent context blocks for Claude Code. Load what you need, when you need it.</h3>
+<h3>The search engine for your AI context. Files, databases, one interface.</h3>
 
 <p>
+  <img src="https://img.shields.io/badge/v2.0-MCP%20Server%20%2B%20PostgreSQL-blueviolet?style=for-the-badge" alt="v2.0" />
   <a href="https://github.com/parcadei/Continuous-Claude-v3">
-    <img src="https://img.shields.io/badge/Requires-Continuous--Claude-blue?style=for-the-badge" alt="Requires Continuous-Claude" />
+    <img src="https://img.shields.io/badge/Integrates-Continuous--Claude-blue?style=for-the-badge" alt="Integrates Continuous-Claude" />
   </a>
 </p>
 
@@ -16,6 +17,12 @@
   </a>
   <a href="#token-savings">
     <img src="https://img.shields.io/badge/saves-7000+%20tokens%2Fprompt-orange" alt="7000+ tokens saved" />
+  </a>
+  <a href="#mcp-server">
+    <img src="https://img.shields.io/badge/MCP-6%20tools-informational" alt="6 MCP tools" />
+  </a>
+  <a href="#postgresql-integration">
+    <img src="https://img.shields.io/badge/PostgreSQL-optional-9cf" alt="PG integration" />
   </a>
   <a href="https://github.com/bokiko/bloxcue/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" />
@@ -39,24 +46,28 @@
 ## Table of Contents
 
 1. [The Story](#the-story)
-2. [Features](#features)
-3. [Who is this for?](#who-is-this-for)
-4. [How it works](#how-it-works)
-5. [Requirements](#requirements)
-6. [Quick Start](#quick-start)
-7. [Enable Auto-Retrieval](#enable-auto-retrieval)
-8. [After Installation](#after-installation)
-9. [For Existing Claude Users](#for-existing-claude-users)
-10. [Token Savings](#token-savings)
-11. [Directory Structure](#directory-structure)
-12. [Commands Reference](#commands-reference)
-13. [Best Practices](#best-practices)
-14. [FAQ](#faq)
-15. [Troubleshooting](#troubleshooting)
-16. [Security](#security)
-17. [Roadmap](#roadmap)
-18. [Contributing](#contributing)
-19. [Credits](#credits)
+2. [Architecture](#architecture)
+3. [Features](#features)
+4. [MCP Server](#mcp-server)
+5. [PostgreSQL Integration](#postgresql-integration)
+6. [Who is this for?](#who-is-this-for)
+7. [How it works](#how-it-works)
+8. [Requirements](#requirements)
+9. [Quick Start](#quick-start)
+10. [Enable Auto-Retrieval](#enable-auto-retrieval)
+11. [After Installation](#after-installation)
+12. [For Existing Claude Users](#for-existing-claude-users)
+13. [Token Savings](#token-savings)
+14. [Directory Structure](#directory-structure)
+15. [Commands Reference](#commands-reference)
+16. [Configuration](#configuration)
+17. [Best Practices](#best-practices)
+18. [FAQ](#faq)
+19. [Troubleshooting](#troubleshooting)
+20. [Security](#security)
+21. [Roadmap](#roadmap)
+22. [Contributing](#contributing)
+23. [Credits](#credits)
 
 ---
 
@@ -72,23 +83,93 @@ After using [Continuous-Claude](https://github.com/parcadei/Continuous-Claude-v3
 
 That's **BloxCue** - intelligent context blocks that get loaded when you need them.
 
+**v2** takes it further: an MCP server with 6 tools, token-budgeted context injection, and optional PostgreSQL integration that unifies your curated markdown blocks with learned memory from [Continuous-Claude](https://github.com/parcadei/Continuous-Claude-v3).
+
+---
+
+## Architecture
+
+```
+                    +---------------------------+
+                    |     Claude Code / MCP      |
+                    |        Client              |
+                    +------------+--------------+
+                                 |
+                          JSON-RPC (stdio)
+                                 |
+                    +------------+--------------+
+                    |    BloxCue MCP Server      |
+                    |    (mcp_server.py)          |
+                    |                            |
+                    |  6 tools:                  |
+                    |  - search_blocks           |
+                    |  - get_block               |
+                    |  - list_blocks             |
+                    |  - index_blocks            |
+                    |  - block_health            |
+                    |  - inject_context          |
+                    +------+----------+----------+
+                           |          |
+              +------------+    +-----+-----------+
+              |                 |                  |
+    +---------v--------+  +----v--------------+   |
+    |  Markdown Files  |  |  PostgreSQL       |   |
+    |  (.md blocks)    |  |  (optional)       |   |
+    |                  |  |                   |   |
+    |  guides/         |  |  archival_memory  |   |
+    |  references/     |  |  table            |   |
+    |  configs/        |  |  (pgvector)       |   |
+    +------------------+  +-------------------+   |
+              |                 |                  |
+              +--------+--------+                  |
+                       |                           |
+              +--------v-----------+               |
+              |   Unified Index    |               |
+              |                    |               |
+              |  BM25 + IDF +      |               |
+              |  Porter Stemmer +  |               |
+              |  Intent Detection  +<--------------+
+              |  + MMR Diversity   |    UserPromptSubmit
+              |                    |    hook (auto-inject)
+              +--------------------+
+```
+
+**Two retrieval paths, one search interface.** Markdown files and PostgreSQL learnings are merged into a single BM25 index. The MCP server and CLI hook both query the same engine.
+
 ---
 
 ## Features
 
-### Intelligent Search Engine
-
-BloxCue includes a purpose-built search engine optimized for context retrieval:
+### Search Engine
 
 | Feature | Description |
 |---------|-------------|
-| **Porter Stemmer** | Matches word variations (`running` → `run`, `deployment` → `deploy`) |
+| **BM25 Scoring** | Industry-standard probabilistic ranking (same algorithm as Elasticsearch) |
+| **Porter Stemmer** | Matches word variations (`running` -> `run`, `deployment` -> `deploy`) |
 | **IDF Weighting** | Rare terms rank higher than common ones for better precision |
-| **Phrase Matching** | Recognizes multi-word queries like "error handling" as phrases |
-| **Query Intent Detection** | Adjusts results based on query type (how-to, troubleshooting, concepts) |
-| **Fuzzy Matching** | Finds relevant blocks even with typos or partial matches |
+| **Bigram Matching** | Recognizes multi-word phrases like "error handling" |
+| **Query Intent Detection** | Adjusts scoring based on query type (how-to, troubleshooting, concept, reference) |
+| **Synonym Expansion** | 50+ tech term mappings (`k8s` -> `kubernetes`, `auth` -> `authentication`) |
+| **MMR Diversity** | Prevents redundant results using Maximal Marginal Relevance |
 | **Memoized Stemming** | LRU cache on stemmer for 50-70% faster repeated searches |
 | **Index Caching** | In-memory cache with mtime checking eliminates repeated disk reads |
+
+### Token-Budgeted Context Injection
+
+BloxCue doesn't just find relevant blocks - it manages your token budget:
+
+```
+Token budget: 3000
+
+Block 1 (score: 12.4, 800 tokens) -> Full content injected
+Block 2 (score: 8.1, 2500 tokens) -> Summary injected (over budget for full)
+Block 3 (score: 5.2, 1200 tokens) -> Reference only (path + title)
+```
+
+- **Full content** for top-ranked blocks that fit
+- **Summaries** (first 300 chars) for blocks that partially fit
+- **References** (title + path) for the rest
+- Configurable budget via `BLOXCUE_MAX_TOKENS` or per-call
 
 ### Automatic Context Injection
 
@@ -97,17 +178,138 @@ BloxCue includes a purpose-built search engine optimized for context retrieval:
 - Injects only the most relevant blocks as context
 - Zero manual intervention required
 
-### Token Efficiency
-
-- Reduces context loading by ~88%
-- Saves ~7,500 tokens per prompt on average
-- More tokens available for Claude's reasoning
-
-### Zero Dependencies
+### Zero Dependencies (Core)
 
 - Pure Python standard library - no pip installs required
-- No external services or API calls
-- Works offline, works anywhere Python 3 runs
+- PostgreSQL integration is **optional** (`psycopg2` imported in try/except)
+- Works offline, works anywhere Python 3.8+ runs
+- No env vars needed for default behavior
+
+---
+
+## MCP Server
+
+BloxCue v2 ships with a full MCP (Model Context Protocol) server, making it compatible with any MCP client: Claude Code, Cursor, Windsurf, and more.
+
+### Tools
+
+| Tool | Description |
+|------|-------------|
+| `search_blocks` | Search with BM25 scoring, returns ranked results with scores and previews |
+| `get_block` | Retrieve full content of a specific block by path |
+| `list_blocks` | List all indexed blocks, optionally filtered by category |
+| `index_blocks` | Rebuild the search index (run after adding/editing blocks) |
+| `block_health` | Health report: freshness, coverage gaps, and improvement suggestions |
+| `inject_context` | **One-shot retrieval**: search + rank + deduplicate + token-budget + format |
+
+### Setup
+
+Add to your MCP config (e.g., `~/.claude/mcp_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "bloxcue": {
+      "type": "stdio",
+      "command": "python3",
+      "args": ["/path/to/bloxcue/scripts/mcp_server.py"]
+    }
+  }
+}
+```
+
+Once configured, your AI assistant can call BloxCue tools directly. No hooks needed - tools are self-documenting via MCP `tools/list`.
+
+### Example: inject_context
+
+The most powerful tool. One call does search + rank + deduplicate + budget:
+
+```
+Tool call: inject_context(query="deployment guide", max_tokens=2000)
+
+Response:
+[BloxCue: Injected 3 block(s), ~1847 tokens, query: "deployment guide"]
+---
+
+### Block 1: Production Deployment (score: 14.2, updated: 2 days ago)
+Tags: deployment, production, aws
+
+# Production Deployment
+## Prerequisites
+- SSH access to production server
+...
+
+### Block 2: CI/CD Pipeline (score: 8.7, updated: 5 days ago)
+[Summary - full block at: guides/cicd.md]
+
+Our CI/CD pipeline uses GitHub Actions to...
+
+### Block 3: Server Configuration (score: 5.1, updated: 12 days ago)
+[Reference only - retrieve full block with: get_block("configs/servers.md")]
+```
+
+---
+
+## PostgreSQL Integration
+
+BloxCue can optionally connect to a PostgreSQL database to search **learned memory** alongside markdown files. This is designed for [Continuous-Claude](https://github.com/parcadei/Continuous-Claude-v3)'s `archival_memory` table but works with any compatible schema.
+
+### What it does
+
+- Fetches session learnings from PostgreSQL at index time
+- Converts them to BloxCue index entries with `pg://learning/{uuid}` virtual paths
+- Merges them into the BM25 index alongside file entries
+- Search results show `[PG]` labels for database-sourced entries
+- Full content retrieval works transparently for both files and PG entries
+
+### How it works
+
+```
+You: "How did we fix that auth hook error?"
+
+BloxCue searches BOTH:
+  1. Markdown files (guides/auth.md, references/hooks.md)
+  2. PostgreSQL learnings (past session where you fixed it)
+
+Results:
+  1. [PG] Error Fix: hook authentication (score: 11.2)  <-- from database
+  2. Authentication Guide (score: 8.4)                   <-- from file
+  3. [PG] Working Solution: token refresh (score: 6.1)   <-- from database
+```
+
+### Enable PostgreSQL
+
+Add env vars to your MCP config:
+
+```json
+{
+  "mcpServers": {
+    "bloxcue": {
+      "type": "stdio",
+      "command": "python3",
+      "args": ["/path/to/bloxcue/scripts/mcp_server.py"],
+      "env": {
+        "BLOXCUE_DATABASE_URL": "postgresql://user:pass@localhost:5432/dbname",
+        "BLOXCUE_MEMORY_DIR": "/path/to/bloxcue"
+      }
+    }
+  }
+}
+```
+
+Or set the environment variables directly:
+
+```bash
+export BLOXCUE_DATABASE_URL="postgresql://user:pass@localhost:5432/dbname"
+```
+
+### Safety
+
+- **Optional**: `psycopg2` is imported in a try/except. Without it, BloxCue works identically to before.
+- **Kill switch**: Set `BLOXCUE_PG_ENABLED=0` to disable even if a URL is configured.
+- **Non-fatal**: Every database call is wrapped in try/except. PG errors are logged to stderr; file search always works.
+- **Read-only**: All database connections use `readonly=True`. BloxCue never writes to your database.
+- **Cache TTL**: PG learnings are cached and refreshed every 5 minutes (configurable via `BLOXCUE_PG_CACHE_TTL`).
 
 ---
 
@@ -116,7 +318,9 @@ BloxCue includes a purpose-built search engine optimized for context retrieval:
 | If you're... | BloxCue helps you... |
 |--------------|----------------------|
 | **A Claude Code user** | Stop burning tokens on unused context |
+| **Using Continuous-Claude** | Search your curated blocks AND learned memory in one place |
 | **Managing multiple configs** | Keep docs, guides, and configs organized and searchable |
+| **Building MCP integrations** | 6 tools available via standard MCP protocol |
 | **Working on several projects** | Switch context without reloading everything |
 | **Hitting token limits** | Save ~7,000 tokens per prompt |
 | **New to Claude Code** | Start with good habits from day one |
@@ -144,9 +348,11 @@ Result: ~8,500 tokens loaded, only ~800 were relevant
 You: "How do I deploy to production?"
 
 BloxCue: Detects "deploy" + "production" keywords
-         → Finds deployment block via Porter stemmer
-         → IDF weights "production" higher (specific term)
-         → Injects only the deployment block
+         -> Stems to "deploy" + "product"
+         -> Expands with synonyms: "release", "deployment"
+         -> BM25 ranks deployment block highest (IDF boost)
+         -> Intent: "howto" -> boosts tags & keywords
+         -> Token budget: injects full content (within budget)
 
 Claude loads: Just the deployment block (~800 tokens)
 
@@ -170,6 +376,8 @@ BloxCue works best alongside Continuous-Claude. They're complementary tools:
 **Think of it this way:**
 - Continuous-Claude = Claude's **memory** (what to remember)
 - BloxCue = Claude's **filing cabinet** (where to find it efficiently)
+
+With PostgreSQL integration enabled, BloxCue becomes the **unified search interface** for both.
 
 If you prefer manual setup, follow our [Continuous-Claude v3](https://github.com/parcadei/Continuous-Claude-v3) first.
 
@@ -407,8 +615,12 @@ Saved tokens go toward:
 ├── projects/           # Project-specific info
 ├── configs/            # Configuration templates
 ├── notes/              # General notes
-└── scripts/
-    └── indexer.py      # Search engine
+├── scripts/
+│   ├── indexer.py      # Search engine + index builder
+│   ├── mcp_server.py   # MCP server (6 tools)
+│   └── pg_provider.py  # PostgreSQL integration (optional)
+└── tests/
+    └── unit/           # 245+ unit tests
 ```
 
 ### By Project
@@ -427,6 +639,8 @@ Saved tokens go toward:
 ---
 
 ## Commands Reference
+
+### CLI
 
 ```bash
 # Index all blocks
@@ -448,6 +662,54 @@ python3 ~/.claude-memory/scripts/indexer.py --rebuild
 python3 ~/.claude-memory/scripts/indexer.py --search "keyword" --json
 ```
 
+### MCP Tools
+
+Once the MCP server is configured, these tools are available to any MCP client:
+
+```
+search_blocks(query="auth errors", limit=5)
+get_block(path="guides/authentication.md")
+list_blocks(category="guides")
+index_blocks(force=true)
+block_health()
+inject_context(query="deployment", max_tokens=2000, limit=5)
+```
+
+---
+
+## Configuration
+
+All configuration is via environment variables. **None are required** - defaults match the original behavior.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BLOXCUE_MEMORY_DIR` | Parent of scripts/ | Path to your blocks directory |
+| `BLOXCUE_MAX_TOKENS` | `3000` | Default token budget for `inject_context` |
+| `BLOXCUE_DATABASE_URL` | *(none)* | PostgreSQL connection URL |
+| `BLOXCUE_PG_ENABLED` | `1` | Set to `0` to disable PG even with a URL |
+| `BLOXCUE_PG_CACHE_TTL` | `300` | Seconds before PG learnings are re-fetched |
+| `DATABASE_URL` | *(none)* | Fallback PG URL (if `BLOXCUE_DATABASE_URL` not set) |
+
+### Example: Full MCP config with PostgreSQL
+
+```json
+{
+  "mcpServers": {
+    "bloxcue": {
+      "type": "stdio",
+      "command": "python3",
+      "args": ["/home/user/bloxcue/scripts/mcp_server.py"],
+      "env": {
+        "BLOXCUE_DATABASE_URL": "postgresql://user:pass@localhost:5432/mydb",
+        "BLOXCUE_MEMORY_DIR": "/home/user/bloxcue",
+        "BLOXCUE_MAX_TOKENS": "4000",
+        "BLOXCUE_PG_CACHE_TTL": "600"
+      }
+    }
+  }
+}
+```
+
 ---
 
 ## Best Practices
@@ -457,6 +719,8 @@ python3 ~/.claude-memory/scripts/indexer.py --search "keyword" --json
 3. **Use frontmatter** - Title, category, and tags improve indexing
 4. **Use descriptive tags** - `[deployment, production, aws]` not just `[deploy]`
 5. **Re-index after changes** - Run the indexer after adding/editing files
+6. **Use `inject_context` over `search_blocks` + `get_block`** - One call, token-budgeted, deduplicated
+7. **Enable PostgreSQL** if using Continuous-Claude - Unified search across files and learnings
 
 ---
 
@@ -465,29 +729,28 @@ python3 ~/.claude-memory/scripts/indexer.py --search "keyword" --json
 <details>
 <summary><strong>Do I need Continuous-Claude?</strong></summary>
 
-Technically no, but recommended. Continuous-Claude handles session memory, BloxCue handles knowledge retrieval. They complement each other.
+Technically no, but recommended. Continuous-Claude handles session memory, BloxCue handles knowledge retrieval. They complement each other. With PG integration, BloxCue can search both.
 </details>
 
 <details>
-<summary><strong>Will this work with Cursor/VS Code?</strong></summary>
+<summary><strong>Will this work with Cursor/VS Code/Windsurf?</strong></summary>
 
-Designed for **Claude Code CLI**. May work with other Claude integrations that support hooks, but untested.
+Yes! The MCP server works with **any MCP-compatible client**. The hook-based auto-retrieval is specific to Claude Code CLI, but the MCP tools work everywhere.
 </details>
 
 <details>
 <summary><strong>How is this different from a smaller CLAUDE.md?</strong></summary>
 
-Two key differences:
+Three key differences:
 1. **Scalability** - Your knowledge grows without growing token usage
 2. **Relevance** - Only blocks matching your query get loaded
-
-A smaller CLAUDE.md means less information. BloxCue means the right information at the right time.
+3. **Intelligence** - BM25 ranking, intent detection, and token budgeting beat naive loading
 </details>
 
 <details>
 <summary><strong>What if Claude needs multiple blocks?</strong></summary>
 
-The retrieval hook returns multiple relevant blocks based on keyword matching. A query about "database deployment" may return both the database block and deployment block.
+`inject_context` handles this automatically. It returns multiple blocks ranked by relevance, with smart token budgeting: full content for top results, summaries for mid-range, and references for the rest.
 </details>
 
 <details>
@@ -501,12 +764,34 @@ The installer supports setting up both.
 </details>
 
 <details>
+<summary><strong>Do I need psycopg2 for PostgreSQL?</strong></summary>
+
+Yes, but it's **completely optional**. Without `psycopg2`, BloxCue works identically to before - pure Python, zero dependencies. Install it only if you want PG integration:
+
+```bash
+pip install psycopg2-binary
+```
+</details>
+
+<details>
 <summary><strong>How do I back up my blocks?</strong></summary>
 
 They're just markdown files. Back them up however you prefer:
 - Git repo (recommended)
 - Cloud sync (Dropbox, iCloud, etc.)
 - Any backup solution you use
+</details>
+
+<details>
+<summary><strong>What's the difference between v1 and v2?</strong></summary>
+
+| Aspect | v1 | v2 |
+|--------|----|----|
+| Search | Keyword matching | BM25 + IDF + stemming + intent detection |
+| Interface | CLI + shell hook | CLI + shell hook + **MCP server (6 tools)** |
+| Data sources | Markdown files | Markdown files + **PostgreSQL** |
+| Context injection | Dump full files | **Token-budgeted** (full/summary/reference tiers) |
+| Tests | None | **245+ unit tests** |
 </details>
 
 ---
@@ -535,6 +820,19 @@ sudo apt install python3
 2. Verify the hook path is correct
 3. Restart Claude Code after changing settings
 
+### MCP server not connecting
+
+1. Verify the path in your `mcp_config.json` is absolute
+2. Check stderr output: `python3 /path/to/mcp_server.py 2>&1`
+3. Ensure Python 3.8+ is on the MCP command's PATH
+
+### PostgreSQL not showing in results
+
+1. Verify `BLOXCUE_DATABASE_URL` is set correctly
+2. Check `psycopg2` is installed: `python3 -c "import psycopg2"`
+3. Rebuild the index: call `index_blocks` via MCP or run the CLI indexer
+4. Check server startup logs for `PostgreSQL integration: enabled`
+
 ---
 
 ## Security
@@ -543,12 +841,14 @@ BloxCue is designed with security in mind:
 
 | Protection | Description |
 |------------|-------------|
-| **Local-only** | No network activity, no telemetry, no data collection |
+| **Local-only** | No telemetry, no data collection |
 | **Path validation** | Prevents directory traversal attacks |
 | **Input sanitization** | User prompts are sanitized before processing |
 | **Type safety** | Handles malformed data gracefully without crashes |
 | **Settings backup** | Creates backup before modifying Claude config |
 | **File locking** | Exclusive locks prevent index corruption from concurrent sessions |
+| **Read-only DB** | PostgreSQL connections use `readonly=True` - BloxCue never writes to your DB |
+| **Optional deps** | `psycopg2` failure is non-fatal; core always works |
 
 See [SECURITY.md](SECURITY.md) for the full security audit report.
 
@@ -560,11 +860,18 @@ See [SECURITY.md](SECURITY.md) for the full security audit report.
 - [x] IDF weighting for term importance
 - [x] Bigram/phrase matching
 - [x] Query intent detection
+- [x] Synonym expansion (50+ tech terms)
+- [x] BM25 probabilistic ranking
+- [x] MMR diversity in results
+- [x] Token-budgeted context injection
 - [x] Path traversal protection
 - [x] Type safety hardening
 - [x] Stemmer memoization (LRU cache)
 - [x] Index caching with mtime invalidation
 - [x] File locking for concurrent safety
+- [x] MCP server (6 tools)
+- [x] PostgreSQL integration (Continuous-Claude learnings)
+- [x] 245+ unit tests
 - [ ] Semantic search with embeddings
 - [ ] VS Code extension for block management
 - [ ] Web UI for managing memory
