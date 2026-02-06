@@ -104,21 +104,13 @@ Choose your integration:
 Copy and paste this to Claude:
 
 ```
-Set up BloxCue for intelligent context management.
+Set up BloxCue from https://github.com/bokiko/bloxcue
 
-1. Clone https://github.com/bokiko/bloxcue to a temp location
-2. Run ./install.sh and guide me through the options:
-   - Scope: Global, Project, or Both
-   - Directory structure preference
-3. Set up the auto-retrieval hook in ~/.claude/settings.json
-4. Create a sample block to test it works
-5. Clean up the cloned repo after install
-
-If I don't have Continuous-Claude yet, set that up first from:
-https://github.com/parcadei/Continuous-Claude-v3
+1. Clone to ~/bloxcue (or wherever I prefer)
+2. Run ./install.sh — ask me about scope (Global/Project/Both) and directory layout
+3. Verify it works: python3 ~/.claude-memory/scripts/indexer.py --search "test"
+4. Help me create my first block from something in my CLAUDE.md
 ```
-
-Claude will handle the technical details while asking for your preferences.
 
 ---
 
