@@ -242,6 +242,11 @@ for INSTALL_PATH in "${INSTALL_PATHS[@]}"; do
     # Create folder structure
     for folder in "${FOLDERS[@]}"; do
         folder_clean=$(echo "$folder" | xargs)  # trim whitespace
+        # L-4 fix: Validate folder names to prevent path traversal
+        if [[ "$folder_clean" == *"/"* ]] || [[ "$folder_clean" == ".."* ]] || [[ "$folder_clean" == "."* ]] || [[ -z "$folder_clean" ]]; then
+            echo -e "  ${RED}✗ Skipped invalid folder name: $folder_clean${NC}"
+            continue
+        fi
         mkdir -p "$INSTALL_PATH/$folder_clean"
         echo "  ✓ $folder_clean/"
     done

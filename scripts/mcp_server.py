@@ -141,6 +141,9 @@ def handle_search_blocks(arguments: dict) -> dict:
     if not query or not isinstance(query, str):
         return {"content": [{"type": "text", "text": "Error: query must be a non-empty string"}], "isError": True}
 
+    # M-2 fix: Cap limit to prevent excessive resource usage
+    limit = min(max(int(limit) if isinstance(limit, (int, float)) else 5, 1), 100)
+
     results = indexer.search(query, limit=limit)
 
     if not results:
@@ -281,10 +284,15 @@ def handle_inject_context(arguments: dict) -> dict:
     if not query or not isinstance(query, str):
         return {"content": [{"type": "text", "text": "Error: query must be a non-empty string"}], "isError": True}
 
+    # M-2 fix: Cap values to prevent excessive resource usage
     if not isinstance(max_tokens, int) or max_tokens < 1:
         max_tokens = 3000
+    else:
+        max_tokens = min(max_tokens, 50000)
     if not isinstance(limit, int) or limit < 1:
         limit = 5
+    else:
+        limit = min(limit, 100)
 
     result = indexer.inject_context(query, limit=limit, max_tokens=max_tokens)
     return {"content": [{"type": "text", "text": result}]}
@@ -356,8 +364,11 @@ def handle_message(message: dict) -> dict | None:
             result = handler(arguments)
             return make_response(msg_id, result)
         except Exception as e:
+            # L-2 fix: Log full error to stderr, return generic message to client
+            sys.stderr.write(f"Error executing {tool_name}: {e}\n")
+            sys.stderr.flush()
             return make_response(msg_id, {
-                "content": [{"type": "text", "text": f"Error executing {tool_name}: {str(e)}"}],
+                "content": [{"type": "text", "text": f"Internal error executing {tool_name}"}],
                 "isError": True
             })
 

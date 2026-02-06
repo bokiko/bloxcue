@@ -46,6 +46,10 @@ except Exception as e:
     pass
 " 2>/dev/null)
 
+# CVE-1 fix: Strip shell metacharacters to prevent command injection
+# Without this, USER_MESSAGE containing $(cmd) or backticks would execute in subsequent expansions
+USER_MESSAGE=$(printf '%s' "$USER_MESSAGE" | tr -d '`$();&|\\'"'"'{}')
+
 debug_log "User message: ${USER_MESSAGE:0:50}..."
 
 # Skip if no message or too short
@@ -102,25 +106,24 @@ if [ "$RESULT_COUNT" = "0" ]; then
     exit 0
 fi
 
-# Build context message
-CONTEXT=$(python3 << PYTHON
-import json
-import sys
+# CVE-2 fix: Pipe SEARCH_RESULTS via stdin instead of heredoc interpolation.
+# The old heredoc approach embedded $SEARCH_RESULTS in a Python triple-quoted string,
+# allowing content containing ''' to escape the string and inject arbitrary Python.
+CONTEXT=$(echo "$SEARCH_RESULTS" | python3 -c "
+import json, sys
 
 try:
-    results = json.loads('''$SEARCH_RESULTS''')
-except:
+    results = json.load(sys.stdin)
+except Exception:
     results = []
 
 if not results:
-    print("")
     sys.exit(0)
 
 output = []
 total_chars = 0
 max_chars = $MAX_CONTEXT_CHARS
 
-# Only include results with good scores
 good_results = [r for r in results if r.get('score', 0) > 5]
 
 for r in good_results:
@@ -129,19 +132,18 @@ for r in good_results:
     content = r.get('content', '')
     score = r.get('score', 0)
 
-    # Limit content per block based on score
     if score > 20:
-        max_content = 800  # High relevance - more content
+        max_content = 800
     elif score > 10:
-        max_content = 500  # Medium relevance
+        max_content = 500
     else:
-        max_content = 300  # Lower relevance
+        max_content = 300
 
     content = content[:max_content]
     if len(r.get('content', '')) > max_content:
-        content += "..."
+        content += '...'
 
-    entry = f"### {title}\n*Source: {path}*\n\n{content}\n"
+    entry = f'### {title}\n*Source: {path}*\n\n{content}\n'
 
     if total_chars + len(entry) > max_chars:
         break
@@ -150,12 +152,9 @@ for r in good_results:
     total_chars += len(entry)
 
 if output:
-    header = "📚 **Relevant context from bloxcue:**\n\n"
-    print(header + "\n---\n".join(output))
-else:
-    print("")
-PYTHON
-)
+    header = '\U0001f4da **Relevant context from bloxcue:**\n\n'
+    print(header + '\n---\n'.join(output))
+")
 
 # Output result
 if [ -n "$CONTEXT" ]; then

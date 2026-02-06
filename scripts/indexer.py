@@ -41,12 +41,18 @@ SCRIPT_DIR = Path(__file__).parent
 MEMORY_DIR = Path(os.environ.get("BLOXCUE_MEMORY_DIR", str(SCRIPT_DIR.parent)))
 INDEX_FILE = SCRIPT_DIR / ".index.json"
 USAGE_FILE = SCRIPT_DIR / ".usage.jsonl"
-MAX_INJECT_TOKENS = int(os.environ.get("BLOXCUE_MAX_TOKENS", "3000"))
+try:
+    MAX_INJECT_TOKENS = int(os.environ.get("BLOXCUE_MAX_TOKENS", "3000"))
+except (ValueError, TypeError):
+    MAX_INJECT_TOKENS = 3000
 
 # PostgreSQL integration (optional)
 PG_DATABASE_URL = os.environ.get("BLOXCUE_DATABASE_URL", os.environ.get("DATABASE_URL", ""))
 PG_ENABLED = bool(PG_DATABASE_URL) and os.environ.get("BLOXCUE_PG_ENABLED", "1") != "0"
-PG_CACHE_TTL = int(os.environ.get("BLOXCUE_PG_CACHE_TTL", "300"))
+try:
+    PG_CACHE_TTL = int(os.environ.get("BLOXCUE_PG_CACHE_TTL", "300"))
+except (ValueError, TypeError):
+    PG_CACHE_TTL = 300
 
 # Stopwords - common words to ignore in search
 STOPWORDS = {
@@ -579,7 +585,7 @@ def build_index(single_file: Optional[Path] = None) -> Dict:
             # Remove existing entry for this file
             rel_path = str(single_file.relative_to(MEMORY_DIR))
             index["files"] = [f for f in index["files"] if f["path"] != rel_path]
-        except:
+        except Exception:
             index = {"files": [], "built": datetime.now().isoformat()}
     else:
         index = {"files": [], "built": datetime.now().isoformat()}
@@ -816,7 +822,7 @@ def load_index() -> Dict:
             _index_cache = json.loads(INDEX_FILE.read_text())
             _index_mtime = current_mtime
             return _index_cache
-        except:
+        except Exception:
             pass
 
     return build_index()
@@ -1134,7 +1140,10 @@ def get_file_content(path: str) -> str:
     try:
         resolved_path = filepath.resolve()
         memory_dir_resolved = MEMORY_DIR.resolve()
-        if not str(resolved_path).startswith(str(memory_dir_resolved)):
+        # M-1 fix: Use os.sep suffix to prevent prefix bypass
+        # (e.g., /a/batch would falsely match /a/b without trailing separator)
+        base = str(memory_dir_resolved)
+        if str(resolved_path) != base and not str(resolved_path).startswith(base + os.sep):
             return ""  # Path traversal attempt - reject silently
     except Exception:
         return ""
@@ -1460,7 +1469,8 @@ def main():
         try:
             filepath = filepath.resolve()
             memory_dir_resolved = MEMORY_DIR.resolve()
-            if not str(filepath).startswith(str(memory_dir_resolved)):
+            base = str(memory_dir_resolved)
+            if str(filepath) != base and not str(filepath).startswith(base + os.sep):
                 print(f"Error: File must be within {MEMORY_DIR}", file=sys.stderr)
                 sys.exit(1)
         except Exception as e:
