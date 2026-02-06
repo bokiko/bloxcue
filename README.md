@@ -38,7 +38,7 @@
 ---
 
 <p align="center">
-  <img src="bloxcue2.jpg" alt="BloxCue - Context blocks for Claude Code" width="600" />
+  <img src="bloxcue-v2.png" alt="BloxCue - Context blocks for Claude Code" width="600" />
 </p>
 
 ---
