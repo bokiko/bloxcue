@@ -822,8 +822,10 @@ def load_index() -> Dict:
             _index_cache = json.loads(INDEX_FILE.read_text())
             _index_mtime = current_mtime
             return _index_cache
-        except Exception:
-            pass
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"[bloxcue] Warning: failed to load index cache ({e}), rebuilding", file=sys.stderr)
+        except Exception as e:
+            print(f"[bloxcue] Warning: unexpected error loading index ({e}), rebuilding", file=sys.stderr)
 
     return build_index()
 
@@ -955,12 +957,15 @@ def search(query: str, limit: int = 5) -> List[Dict]:
 
         # Bigram bonus (phrase matching)
         entry_bigrams = entry.get("bigrams", [])
+        entry_bigrams_set = set(entry_bigrams)
         for qbigram in query_bigrams:
-            for ebigram in entry_bigrams:
-                if qbigram == ebigram:
-                    score += 5.0
-                elif qbigram in ebigram or ebigram in qbigram:
-                    score += 2.5
+            if qbigram in entry_bigrams_set:
+                score += 5.0
+            else:
+                for ebigram in entry_bigrams:
+                    if qbigram in ebigram or ebigram in qbigram:
+                        score += 2.5
+                        break
 
         # Fuzzy fallback: catch matches that BM25 missed (typos, partial matches)
         if score == 0:
@@ -1027,6 +1032,7 @@ def search(query: str, limit: int = 5) -> List[Dict]:
     # MMR diversity: reduce redundancy in top results
     if len(results) > 1:
         selected = [results[0]]
+        selected_term_sets = [set(results[0]["entry"].get("keywords", []))]
         remaining = results[1:]
 
         while remaining and len(selected) < limit:
@@ -1036,8 +1042,7 @@ def search(query: str, limit: int = 5) -> List[Dict]:
             for i, candidate in enumerate(remaining):
                 cand_terms = set(candidate["entry"].get("keywords", []))
                 max_overlap = 0.0
-                for sel in selected:
-                    sel_terms = set(sel["entry"].get("keywords", []))
+                for sel_terms in selected_term_sets:
                     if cand_terms and sel_terms:
                         union = len(cand_terms | sel_terms)
                         if union > 0:
@@ -1051,7 +1056,9 @@ def search(query: str, limit: int = 5) -> List[Dict]:
                     best_mmr = mmr
                     best_idx = i
 
-            selected.append(remaining.pop(best_idx))
+            chosen = remaining.pop(best_idx)
+            selected.append(chosen)
+            selected_term_sets.append(set(chosen["entry"].get("keywords", [])))
 
         results = selected
 
