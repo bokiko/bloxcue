@@ -1149,7 +1149,7 @@ def get_file_content(path: str) -> str:
         return ""
 
     if resolved_path.exists():
-        content = resolved_path.read_text()
+        content = resolved_path.read_text(encoding="utf-8")
         _, body = parse_frontmatter(content)
         return body
     return ""

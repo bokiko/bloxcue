@@ -69,6 +69,7 @@ def fetch_learnings(url: str, limit: int = 500, since: Optional[str] = None) -> 
     if not HAS_PSYCOPG2 or not url:
         return []
 
+    conn = None
     try:
         conn = psycopg2.connect(url, connect_timeout=5)
         conn.set_session(readonly=True)
@@ -92,7 +93,6 @@ def fetch_learnings(url: str, limit: int = 500, since: Optional[str] = None) -> 
         rows = cur.fetchall()
 
         cur.close()
-        conn.close()
 
         learnings = []
         for row in rows:
@@ -109,6 +109,12 @@ def fetch_learnings(url: str, limit: int = 500, since: Optional[str] = None) -> 
     except Exception as e:
         print(f"[BloxCue PG] Failed to fetch learnings: {e}", file=sys.stderr)
         return []
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def fetch_learning_content(url: str, learning_id: str) -> str:
@@ -124,6 +130,7 @@ def fetch_learning_content(url: str, learning_id: str) -> str:
     if not HAS_PSYCOPG2 or not url or not learning_id:
         return ""
 
+    conn = None
     try:
         conn = psycopg2.connect(url, connect_timeout=5)
         conn.set_session(readonly=True)
@@ -136,7 +143,6 @@ def fetch_learning_content(url: str, learning_id: str) -> str:
         row = cur.fetchone()
 
         cur.close()
-        conn.close()
 
         if not row:
             return ""
@@ -171,6 +177,12 @@ def fetch_learning_content(url: str, learning_id: str) -> str:
     except Exception as e:
         print(f"[BloxCue PG] Failed to fetch learning {learning_id}: {e}", file=sys.stderr)
         return ""
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def learning_to_index_entry(learning: Dict, extract_keywords_fn: Callable) -> Optional[Dict]:
