@@ -984,8 +984,9 @@ def search(query: str, limit: int = 5) -> List[Dict]:
             for field, multiplier in weight_adjustments.items():
                 if field == "title":
                     title_lower = entry.get("title", "").lower()
+                    title_stems = {porter_stem(normalize_word(w)) for w in title_lower.split()}
                     for term in query_terms:
-                        if porter_stem(term) in [porter_stem(normalize_word(w)) for w in title_lower.split()]:
+                        if porter_stem(term) in title_stems:
                             score *= multiplier
                             break
                 elif field == "tags":
@@ -1005,9 +1006,6 @@ def search(query: str, limit: int = 5) -> List[Dict]:
 
         if score > 0:
             results.append({"entry": entry, "score": score})
-
-    # Sort by BM25 score
-    results.sort(key=lambda x: x["score"], reverse=True)
 
     # Recency boost: gently favor recently modified blocks
     for result in results:

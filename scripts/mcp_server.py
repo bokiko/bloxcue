@@ -251,12 +251,13 @@ def handle_index_blocks(arguments: dict) -> dict:
     """Execute index_blocks tool."""
     # Redirect stdout to capture indexer output
     old_stdout = sys.stdout
-    sys.stdout = open(os.devnull, 'w')
+    devnull = open(os.devnull, 'w')
+    sys.stdout = devnull
     try:
         index = indexer.build_index()
     finally:
-        sys.stdout.close()
         sys.stdout = old_stdout
+        devnull.close()
 
     file_count = len(index.get("files", []))
     idf_count = len(index.get("idf", {}))
