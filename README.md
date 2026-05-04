@@ -14,6 +14,23 @@ BloxCue is a standalone local context retrieval layer for AI coding tools. It in
 
 BloxCue v3 is MCP-first for Claude, Codex, Gemini, Cursor, Windsurf, and generic MCP clients. Claude Code hooks are an optional adapter. Continuous-Claude and PostgreSQL are legacy import sources, not required runtime services.
 
+## Contents
+
+- [Why BloxCue?](#why-bloxcue)
+- [Do Claude and Codex share memory?](#do-claude-and-codex-share-memory)
+- [Quick Start](#quick-start)
+- [Upgrading from v2](#upgrading-from-v2)
+- [What Changed In v3](#what-changed-in-v3)
+- [MCP Setup](#mcp-setup)
+- [Knowledge Blocks](#knowledge-blocks)
+- [Learned Memory](#learned-memory)
+- [Legacy PostgreSQL Import](#legacy-postgresql-import)
+- [Optional Claude Code Hook](#optional-claude-code-hook)
+- [Commands](#commands)
+- [Environment](#environment)
+- [Security](#security)
+- [More Documentation](#more-documentation)
+
 ## Why BloxCue?
 
 A `CLAUDE.md` (or any always-loaded system prompt) gets reloaded on every turn. A 30 KB file becomes hundreds of thousands of wasted tokens per session. BloxCue moves that knowledge into ranked, on-demand markdown blocks: BM25 + IDF + stemming, with token-budgeted injection. Your assistant gets the deployment guide when you ask about deployments, not on every prompt about anything.
@@ -222,20 +239,50 @@ python3 ~/.bloxcue/knowledge/scripts/indexer.py --list-learnings
 
 ## Environment
 
+**Core paths**
+
 | Variable | Default | Purpose |
 |---|---:|---|
 | `BLOXCUE_MEMORY_DIR` | `~/.bloxcue/knowledge` | Primary markdown knowledge directory |
 | `BLOXCUE_LEARNINGS_DB` | `~/.bloxcue/learnings.db` | SQLite learned memory database |
-| `BLOXCUE_MAX_TOKENS` | `3000` | Token budget for context injection |
-| `BLOXCUE_DATABASE_URL` | unset | Legacy PostgreSQL import URL |
-| `BLOXCUE_ENABLE_LEGACY_PG_RUNTIME` | `0` | Temporary compatibility switch for old live PG indexing |
+| `BLOXCUE_INDEX_FILE` | `<MEMORY_DIR>/.bloxcue/index.json` | Search index cache location |
+| `BLOXCUE_USAGE_FILE` | `<MEMORY_DIR>/.bloxcue/usage.jsonl` | Local search analytics log |
+| `BLOXCUE_MAX_TOKENS` | `3000` | Token budget for `inject_context` |
+
+**Hook tuning** (only read by `hooks/memory-retrieve.py`)
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `BLOXCUE_HOOK_MAX_RESULTS` | `3` | Max blocks returned per Claude Code prompt |
+| `BLOXCUE_HOOK_MAX_CONTEXT_CHARS` | `3000` | Cap on injected context size per prompt |
+| `BLOXCUE_HOOK_MIN_QUERY_LENGTH` | `5` | Minimum prompt length before search runs |
+
+**Legacy PostgreSQL** (one-time import only, not runtime)
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `BLOXCUE_DATABASE_URL` | unset | PostgreSQL connection URL for `--import-postgres` |
+| `BLOXCUE_ENABLE_LEGACY_PG_RUNTIME` | `0` | Temporary compatibility switch for v2 live PG indexing |
 
 `BLOXCUE_PG_ENABLED` from v2 no longer enables runtime PostgreSQL merging. Use `--import-postgres` for migration; temporary live compatibility requires `BLOXCUE_ENABLE_LEGACY_PG_RUNTIME=1`.
 
 ## Security
 
-BloxCue reads local markdown and SQLite records. File retrieval blocks path traversal outside configured knowledge directories. Legacy PostgreSQL import uses read-only fetches through `pg_provider.py`.
+BloxCue reads local markdown and SQLite records. File retrieval blocks path traversal outside configured knowledge directories. Index writes are atomic (tempfile + `os.replace`) and cross-platform — no `fcntl` dependency, so v3.0.1+ runs on Windows. Legacy PostgreSQL import uses read-only fetches through `pg_provider.py`.
+
+For the full policy, audit history, and per-component analysis, see [`SECURITY.md`](SECURITY.md).
+
+## More Documentation
+
+- [`CHANGELOG.md`](CHANGELOG.md) — release notes for each version
+- [`AI_SETUP.md`](AI_SETUP.md) — concise setup guide for AI assistants installing BloxCue on a user's machine
+- [`SECURITY.md`](SECURITY.md) — full security policy, what BloxCue accesses, and the audit history
+- [`security/2026-02-06-audit-remediation.md`](security/2026-02-06-audit-remediation.md) — v2 audit findings and fixes
+- [`security/2026-05-04-v3-audit-remediation.md`](security/2026-05-04-v3-audit-remediation.md) — v3.0.1 audit findings and fixes
+- [`templates/`](templates/) — example knowledge blocks (deployment guides, runbooks, API references)
+- [Releases](https://github.com/bokiko/bloxcue/releases) — tagged versions and changelogs
+- [Issues](https://github.com/bokiko/bloxcue/issues) — bug reports and feature requests
 
 ## License
 
-MIT
+[MIT](LICENSE)
