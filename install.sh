@@ -16,6 +16,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AUTO_MODE=0
 SCOPE_ARG=""
 STRUCTURE_ARG=""
+CLAUDE_HOOK=0
+MUTATE_CONFIG=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --uninstall)
@@ -28,6 +30,8 @@ while [ $# -gt 0 ]; do
             echo ""
             echo -e "${YELLOW}Note: Your memory files are preserved.${NC}"
             echo "  To fully remove, delete these manually:"
+            echo "    rm -rf ~/.bloxcue"
+            echo "    rm -rf ./bloxcue-knowledge"
             echo "    rm -rf ~/.claude-memory"
             echo "    rm -rf ./claude-memory"
             echo ""
@@ -37,6 +41,12 @@ while [ $# -gt 0 ]; do
             ;;
         --auto)
             AUTO_MODE=1
+            ;;
+        --claude-hook)
+            CLAUDE_HOOK=1
+            ;;
+        --mutate-config)
+            MUTATE_CONFIG=1
             ;;
         --scope)
             shift
@@ -62,8 +72,8 @@ fi
 echo -e "${BLUE}"
 echo "╔═══════════════════════════════════════════════════════════╗"
 echo "║                    BloxCue Installer                      ║"
-echo "║         Context blocks for Claude Code                    ║"
-echo "║         Save 90% of your tokens                           ║"
+echo "║         Local context retrieval for MCP clients            ║"
+echo "║         Claude hooks are optional adapters                 ║"
 echo "╚═══════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -82,6 +92,72 @@ fi
 echo -e "${GREEN}✓ Python 3 found${NC}"
 echo ""
 
+detect_client() {
+    if command -v "$1" > /dev/null 2>&1; then
+        echo "installed"
+    else
+        echo "not found"
+    fi
+}
+
+print_mcp_setup() {
+    local memory_path="$1"
+    local server_path="$SCRIPT_DIR/scripts/mcp_server.py"
+
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}MCP client setup${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo "Detected clients:"
+    echo "  claude: $(detect_client claude)"
+    echo "  codex:  $(detect_client codex)"
+    echo "  gemini: $(detect_client gemini)"
+    echo ""
+    echo "Claude Code (~/.claude/mcp_config.json):"
+    cat << CLAUDE_MCP
+{
+  "mcpServers": {
+    "bloxcue": {
+      "type": "stdio",
+      "command": "python3",
+      "args": ["$server_path"],
+      "env": {
+        "BLOXCUE_MEMORY_DIR": "$memory_path"
+      }
+    }
+  }
+}
+CLAUDE_MCP
+    echo ""
+    echo "Codex (~/.codex/config.toml):"
+    cat << CODEX_MCP
+[mcp_servers.bloxcue]
+command = "python3"
+args = ["$server_path"]
+
+[mcp_servers.bloxcue.env]
+BLOXCUE_MEMORY_DIR = "$memory_path"
+CODEX_MCP
+    echo ""
+    echo "Gemini CLI (~/.gemini/settings.json):"
+    cat << GEMINI_MCP
+{
+  "mcpServers": {
+    "bloxcue": {
+      "command": "python3",
+      "args": ["$server_path"],
+      "env": {
+        "BLOXCUE_MEMORY_DIR": "$memory_path"
+      }
+    }
+  }
+}
+GEMINI_MCP
+    echo ""
+    echo "No client config was edited by default."
+    echo ""
+}
+
 # ============================================
 # STEP 1: Installation Scope
 # ============================================
@@ -89,11 +165,11 @@ echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━�
 echo -e "${YELLOW}Step 1/3: Where to install?${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo "  1) Global (~/.claude-memory)"
+echo "  1) Global (~/.bloxcue/knowledge)"
 echo "     Your personal knowledge base - accessible from any project"
 echo "     Best for: general docs, references, personal notes"
 echo ""
-echo "  2) Project-specific (./claude-memory)"
+echo "  2) Project-specific (./bloxcue-knowledge)"
 echo "     Lives in your current project folder"
 echo "     Best for: project docs, team sharing via git"
 echo ""
@@ -108,10 +184,10 @@ else
 fi
 
 case $SCOPE_CHOICE in
-    1) INSTALL_PATHS=("$HOME/.claude-memory") ;;
-    2) INSTALL_PATHS=("$(pwd)/claude-memory") ;;
-    3) INSTALL_PATHS=("$HOME/.claude-memory" "$(pwd)/claude-memory") ;;
-    *) INSTALL_PATHS=("$HOME/.claude-memory") ;;
+    1) INSTALL_PATHS=("$HOME/.bloxcue/knowledge") ;;
+    2) INSTALL_PATHS=("$(pwd)/bloxcue-knowledge") ;;
+    3) INSTALL_PATHS=("$HOME/.bloxcue/knowledge" "$(pwd)/bloxcue-knowledge") ;;
+    *) INSTALL_PATHS=("$HOME/.bloxcue/knowledge") ;;
 esac
 
 echo ""
@@ -213,7 +289,11 @@ for folder in "${FOLDERS[@]}"; do
     echo "    → $folder/"
 done
 echo ""
-echo -e "  ${GREEN}Auto-retrieval:${NC} Enabled (hooks will be installed)"
+if [ "$CLAUDE_HOOK" = "1" ]; then
+    echo -e "  ${GREEN}Claude auto-retrieval:${NC} Enabled (hook adapter will be installed)"
+else
+    echo -e "  ${GREEN}Claude auto-retrieval:${NC} Not enabled (use --claude-hook to install)"
+fi
 echo ""
 if [ "$AUTO_MODE" = "1" ]; then
     CONFIRM="Y"
@@ -312,22 +392,22 @@ Use Bearer token in headers...
 
 ```bash
 # Index all blocks
-python3 ~/.claude-memory/scripts/indexer.py
+python3 ~/.bloxcue/knowledge/scripts/indexer.py
 
 # Search blocks
-python3 ~/.claude-memory/scripts/indexer.py --search "keyword"
+python3 ~/.bloxcue/knowledge/scripts/indexer.py --search "keyword"
 
 # List all blocks
-python3 ~/.claude-memory/scripts/indexer.py --list
+python3 ~/.bloxcue/knowledge/scripts/indexer.py --list
 ```
 
 ## Next Steps
 
 1. Delete this file (or keep it as reference)
 2. Create your first real block
-3. Ask Claude about a topic you documented
+3. Ask your MCP client about a topic you documented
 
-Claude will automatically retrieve relevant blocks!
+BloxCue will retrieve relevant blocks through MCP.
 EXAMPLE
     echo "  ✓ $FIRST_FOLDER/getting-started.md"
 
@@ -335,72 +415,64 @@ EXAMPLE
 done
 
 # ============================================
-# INSTALL HOOKS
+# INSTALL OPTIONAL CLAUDE HOOK ADAPTER
 # ============================================
-echo -e "${GREEN}Installing auto-retrieval hooks...${NC}"
-
-HOOKS_DIR="$HOME/.claude/hooks"
-mkdir -p "$HOOKS_DIR"
-
-# Copy hook files
-cp "$SCRIPT_DIR/hooks/memory-retrieve.sh" "$HOOKS_DIR/"
-chmod +x "$HOOKS_DIR/memory-retrieve.sh"
-echo "  ✓ memory-retrieve.sh"
-
-# Update the hook to use correct path
 MEMORY_PATH="${INSTALL_PATHS[0]}"
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    sed -i '' "s|MEMORY_PATH=.*|MEMORY_PATH=\"$MEMORY_PATH\"|" "$HOOKS_DIR/memory-retrieve.sh"
-else
-    sed -i "s|MEMORY_PATH=.*|MEMORY_PATH=\"$MEMORY_PATH\"|" "$HOOKS_DIR/memory-retrieve.sh"
-fi
+HOOK_COMMAND="BLOXCUE_MEMORY_DIR=\"$MEMORY_PATH\" python3 ~/.claude/hooks/memory-retrieve.py"
 
-# Handle settings.json
-SETTINGS_FILE="$HOME/.claude/settings.json"
-HOOK_ENTRY='"UserPromptSubmit": [{"hooks": [{"type": "command", "command": "~/.claude/hooks/memory-retrieve.sh"}]}]'
+if [ "$CLAUDE_HOOK" = "1" ]; then
+    echo -e "${GREEN}Installing Claude auto-retrieval hook adapter...${NC}"
+    HOOKS_DIR="$HOME/.claude/hooks"
+    mkdir -p "$HOOKS_DIR"
+    cp "$SCRIPT_DIR/hooks/memory-retrieve.py" "$HOOKS_DIR/"
+    cp "$SCRIPT_DIR/hooks/memory-retrieve.sh" "$HOOKS_DIR/"
+    chmod +x "$HOOKS_DIR/memory-retrieve.py" "$HOOKS_DIR/memory-retrieve.sh"
+    echo "  ✓ memory-retrieve.py"
+    echo "  ✓ memory-retrieve.sh compatibility shim"
 
-if [ -f "$SETTINGS_FILE" ]; then
-    # Create backup before any modification
-    BACKUP_FILE="$HOME/.claude/settings.json.backup.$(date +%Y%m%d_%H%M%S)"
-    cp "$SETTINGS_FILE" "$BACKUP_FILE"
-    echo "  ✓ Backup created: $BACKUP_FILE"
-    # Check if hooks section already contains our hook
-    if grep -q "memory-retrieve.sh" "$SETTINGS_FILE" 2>/dev/null; then
-        echo "  ✓ Hook already in settings.json"
-    else
-        echo ""
-        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "${YELLOW}Action needed: Add hook to settings.json${NC}"
-        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo ""
-        echo "Your ~/.claude/settings.json exists. Add this to the hooks section:"
-        echo ""
-        echo -e "${CYAN}\"UserPromptSubmit\": [{${NC}"
-        echo -e "${CYAN}  \"hooks\": [{${NC}"
-        echo -e "${CYAN}    \"type\": \"command\",${NC}"
-        echo -e "${CYAN}    \"command\": \"~/.claude/hooks/memory-retrieve.sh\"${NC}"
-        echo -e "${CYAN}  }]${NC}"
-        echo -e "${CYAN}}]${NC}"
-        echo ""
-        echo "Or ask Claude to add it for you!"
-        echo ""
+    echo ""
+    echo -e "${YELLOW}Claude Code hook setup is opt-in.${NC}"
+    echo "Add this UserPromptSubmit hook if you want automatic prompt injection:"
+    echo ""
+    echo -e "${CYAN}\"UserPromptSubmit\": [{${NC}"
+    echo -e "${CYAN}  \"hooks\": [{${NC}"
+    echo -e "${CYAN}    \"type\": \"command\",${NC}"
+    echo -e "${CYAN}    \"command\": \"$HOOK_COMMAND\"${NC}"
+    echo -e "${CYAN}  }]${NC}"
+    echo -e "${CYAN}}]${NC}"
+    if [ "$MUTATE_CONFIG" = "1" ]; then
+        SETTINGS_FILE="$HOME/.claude/settings.json"
+        mkdir -p "$HOME/.claude"
+        if [ -f "$SETTINGS_FILE" ]; then
+            BACKUP_FILE="$SETTINGS_FILE.backup.$(date +%Y%m%d_%H%M%S)"
+            cp "$SETTINGS_FILE" "$BACKUP_FILE"
+            echo "  ✓ Backup created: $BACKUP_FILE"
+        fi
+        python3 - "$SETTINGS_FILE" "$HOOK_COMMAND" << 'PY'
+import json
+import sys
+from pathlib import Path
+
+settings_path = Path(sys.argv[1])
+hook_command = sys.argv[2]
+if settings_path.exists():
+    try:
+        data = json.loads(settings_path.read_text())
+    except json.JSONDecodeError:
+        data = {}
+else:
+    data = {}
+hooks = data.setdefault("hooks", {})
+entries = hooks.setdefault("UserPromptSubmit", [])
+hook_entry = {"type": "command", "command": hook_command}
+if not any(hook_entry in item.get("hooks", []) for item in entries if isinstance(item, dict)):
+    entries.append({"hooks": [hook_entry]})
+settings_path.write_text(json.dumps(data, indent=2) + "\n")
+PY
+        echo "  ✓ Updated ~/.claude/settings.json"
     fi
 else
-    # Create settings.json with hook
-    mkdir -p "$HOME/.claude"
-    cat > "$SETTINGS_FILE" << 'SETTINGS'
-{
-  "hooks": {
-    "UserPromptSubmit": [{
-      "hooks": [{
-        "type": "command",
-        "command": "~/.claude/hooks/memory-retrieve.sh"
-      }]
-    }]
-  }
-}
-SETTINGS
-    echo "  ✓ Created ~/.claude/settings.json with hooks"
+    echo -e "${GREEN}Skipping Claude hook adapter. Use --claude-hook to install it.${NC}"
 fi
 
 # ============================================
@@ -429,18 +501,23 @@ for INSTALL_PATH in "${INSTALL_PATHS[@]}"; do
     echo "  → $INSTALL_PATH"
 done
 echo ""
+print_mcp_setup "${INSTALL_PATHS[0]}"
+echo ""
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${YELLOW}Quick start:${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo "  1. Restart Claude Code (to load the hook)"
+echo "  1. Configure your MCP client with:"
 echo ""
-echo "  2. Ask Claude to help you create blocks:"
+echo "     command: python3"
+echo "     args:    $SCRIPT_DIR/scripts/mcp_server.py"
+echo ""
+echo "  2. Ask your AI tool to help you create blocks:"
 echo ""
 echo -e "     ${GREEN}\"Help me create a block for [topic]. Read the${NC}"
-echo -e "     ${GREEN} getting-started guide at ~/.claude-memory/\"${NC}"
+echo -e "     ${GREEN} getting-started guide at ${INSTALL_PATHS[0]}/\"${NC}"
 echo ""
-echo "  3. That's it! Claude retrieves context automatically."
+echo "  3. Use MCP tools to search, list, retrieve, and inject context."
 echo ""
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
@@ -449,5 +526,5 @@ echo "  Index:   python3 ${INSTALL_PATHS[0]}/scripts/indexer.py"
 echo "  Search:  python3 ${INSTALL_PATHS[0]}/scripts/indexer.py --search \"keyword\""
 echo "  List:    python3 ${INSTALL_PATHS[0]}/scripts/indexer.py --list"
 echo ""
-echo -e "${GREEN}Enjoy 90% token savings!${NC}"
+echo -e "${GREEN}BloxCue is ready. Existing ~/.claude-memory blocks remain readable.${NC}"
 echo ""
