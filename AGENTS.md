@@ -1,6 +1,6 @@
-# CLAUDE.md — BloxCue project guide
+# AGENTS.md — BloxCue project guide
 
-Internal guide for Claude Code (and other AI assistants) working on this repo. Keep concise. For user-facing docs, see [`README.md`](README.md), [`AI_SETUP.md`](AI_SETUP.md), [`SECURITY.md`](SECURITY.md), [`CONTRIBUTING.md`](CONTRIBUTING.md).
+Project context for AI coding assistants (Claude Code, Codex, Cursor, Windsurf, etc.) and human contributors working on this repo. Vendor-neutral. Keep concise. For user-facing docs, see [`README.md`](README.md), [`AI_SETUP.md`](AI_SETUP.md), [`SECURITY.md`](SECURITY.md), [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## What this project is
 
