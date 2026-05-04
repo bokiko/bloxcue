@@ -18,7 +18,6 @@ import sys
 import json
 import re
 import argparse
-import fcntl
 import sqlite3
 from pathlib import Path
 from datetime import datetime
@@ -562,17 +561,19 @@ def extract_bigrams(content: str, frontmatter: Dict) -> List[str]:
 
 def write_index_safely(index_path: Path, data: Dict) -> None:
     """
-    Write index with exclusive file locking for concurrent safety.
+    Write index atomically via temp-file + os.replace().
 
-    Prevents index corruption when multiple sessions write simultaneously.
-    Uses fcntl.LOCK_EX for exclusive lock during write.
+    v3.0.1: the previous fcntl-based version opened the destination in
+    ``'w'`` mode (truncating the file) *before* acquiring the exclusive
+    lock, so two concurrent writers could both truncate. Atomic rename
+    fixes the race and is portable across POSIX and Windows, removing
+    the fcntl dependency that prevented Windows support.
     """
-    with open(index_path, 'w') as f:
-        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-        try:
-            json.dump(data, f, indent=2)
-        finally:
-            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    index_path = Path(index_path)
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = index_path.with_suffix(index_path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.replace(str(tmp), str(index_path))
 
 
 def knowledge_dirs() -> List[Path]:

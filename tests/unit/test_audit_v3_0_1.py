@@ -10,6 +10,7 @@ Findings:
 """
 
 import importlib
+import json
 import os
 import sys
 from pathlib import Path
@@ -193,3 +194,60 @@ def test_index_file_env_override(tmp_path, monkeypatch, reloadable_indexer):
     indexer = reloadable_indexer()
     assert indexer.INDEX_FILE == custom_index
     assert indexer.USAGE_FILE == custom_usage
+
+
+# ============================================================
+# Finding 3: Atomic write replaces fcntl
+# ============================================================
+
+def test_atomic_write_no_partial_state(tmp_path, monkeypatch, reloadable_indexer):
+    """If os.replace fails mid-write, the original index must remain intact."""
+    memory_dir = tmp_path / "knowledge"
+    memory_dir.mkdir()
+    monkeypatch.setenv("BLOXCUE_MEMORY_DIR", str(memory_dir))
+    monkeypatch.setenv("BLOXCUE_LEARNINGS_DB", str(tmp_path / "learnings.db"))
+    monkeypatch.setenv("BLOXCUE_INDEX_FILE", str(tmp_path / "atomic_index.json"))
+    monkeypatch.setenv("BLOXCUE_USAGE_FILE", str(tmp_path / "atomic_usage.jsonl"))
+
+    indexer = reloadable_indexer()
+
+    index_path = tmp_path / "atomic_index.json"
+    # Pre-seed with known-good content
+    original_data = {"files": [{"path": "original.md", "title": "Original"}]}
+    indexer.write_index_safely(index_path, original_data)
+    assert index_path.exists()
+    pre_content = index_path.read_text()
+
+    # Now patch os.replace to raise during the next write
+    real_replace = os.replace
+
+    def boom_replace(src, dst):
+        raise OSError("simulated crash mid-write")
+
+    monkeypatch.setattr("os.replace", boom_replace)
+
+    new_data = {"files": [{"path": "new.md", "title": "New"}], "huge": "x" * 10000}
+    with pytest.raises(OSError, match="simulated"):
+        indexer.write_index_safely(index_path, new_data)
+
+    # Original file untouched
+    assert index_path.read_text() == pre_content, (
+        "Original index must be intact when atomic write fails"
+    )
+
+    # Restore replace and verify next write succeeds
+    monkeypatch.setattr("os.replace", real_replace)
+    indexer.write_index_safely(index_path, new_data)
+    assert json.loads(index_path.read_text())["files"][0]["path"] == "new.md"
+
+
+def test_fcntl_no_longer_imported():
+    """fcntl should not be imported by indexer.py anymore (Windows compat)."""
+    import re
+    indexer_source = (SCRIPTS_DIR / "indexer.py").read_text()
+    assert not re.search(r"^\s*import\s+fcntl\b", indexer_source, re.MULTILINE), (
+        "indexer.py still imports fcntl"
+    )
+    assert not re.search(r"^\s*from\s+fcntl\b", indexer_source, re.MULTILINE), (
+        "indexer.py still uses 'from fcntl' import"
+    )
