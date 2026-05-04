@@ -19,10 +19,11 @@ import json
 import re
 import argparse
 import fcntl
+import sqlite3
 from pathlib import Path
 from datetime import datetime
 from functools import lru_cache
-from typing import Dict, List, Optional, Tuple, Set
+from typing import Dict, List, Optional, Tuple, Set, Iterable
 
 # PostgreSQL provider (optional)
 try:
@@ -38,17 +39,31 @@ except ImportError:
 
 # Configuration
 SCRIPT_DIR = Path(__file__).parent
-MEMORY_DIR = Path(os.environ.get("BLOXCUE_MEMORY_DIR", str(SCRIPT_DIR.parent)))
+DEFAULT_MEMORY_DIR = Path.home() / ".bloxcue" / "knowledge"
+LEGACY_MEMORY_DIR = Path.home() / ".claude-memory"
+
+
+def default_memory_dir() -> Path:
+    """Resolve default memory dir for repo-run and installed-copy use."""
+    installed_parent = SCRIPT_DIR.parent
+    if not (installed_parent / "templates").exists():
+        return installed_parent
+    return DEFAULT_MEMORY_DIR
+
+
+MEMORY_DIR = Path(os.environ.get("BLOXCUE_MEMORY_DIR", str(default_memory_dir()))).expanduser()
 INDEX_FILE = SCRIPT_DIR / ".index.json"
 USAGE_FILE = SCRIPT_DIR / ".usage.jsonl"
+LEARNINGS_DB = Path(os.environ.get("BLOXCUE_LEARNINGS_DB", str(Path.home() / ".bloxcue" / "learnings.db"))).expanduser()
 try:
     MAX_INJECT_TOKENS = int(os.environ.get("BLOXCUE_MAX_TOKENS", "3000"))
 except (ValueError, TypeError):
     MAX_INJECT_TOKENS = 3000
 
-# PostgreSQL integration (optional)
+# PostgreSQL import compatibility. Runtime PG merge is off by default in v3;
+# use --import-postgres to copy archival_memory rows into SQLite.
 PG_DATABASE_URL = os.environ.get("BLOXCUE_DATABASE_URL", os.environ.get("DATABASE_URL", ""))
-PG_ENABLED = bool(PG_DATABASE_URL) and os.environ.get("BLOXCUE_PG_ENABLED", "1").lower() in ("1", "true", "yes", "on")
+PG_ENABLED = bool(PG_DATABASE_URL) and os.environ.get("BLOXCUE_ENABLE_LEGACY_PG_RUNTIME", "0").lower() in ("1", "true", "yes", "on")
 try:
     PG_CACHE_TTL = int(os.environ.get("BLOXCUE_PG_CACHE_TTL", "300"))
 except (ValueError, TypeError):
@@ -550,19 +565,160 @@ def write_index_safely(index_path: Path, data: Dict) -> None:
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
-def index_file(filepath: Path) -> Optional[Dict]:
+def knowledge_dirs() -> List[Path]:
+    """Return BloxCue-owned knowledge dirs plus readable legacy dirs."""
+    dirs = [MEMORY_DIR]
+    legacy = LEGACY_MEMORY_DIR
+    try:
+        if legacy.expanduser().resolve() != MEMORY_DIR.expanduser().resolve() and legacy.exists():
+            dirs.append(legacy)
+    except Exception:
+        if legacy.exists():
+            dirs.append(legacy)
+    return dirs
+
+
+def _entry_path_for(filepath: Path, base_dir: Path) -> str:
+    rel_path = str(filepath.relative_to(base_dir))
+    if base_dir == LEGACY_MEMORY_DIR and MEMORY_DIR != LEGACY_MEMORY_DIR:
+        return f"legacy://claude-memory/{rel_path}"
+    return rel_path
+
+
+def _resolve_entry_path(path: str) -> Optional[Path]:
+    if path.startswith("legacy://claude-memory/"):
+        return LEGACY_MEMORY_DIR / path.replace("legacy://claude-memory/", "", 1)
+    return MEMORY_DIR / path
+
+
+def ensure_learnings_db() -> None:
+    """Create the BloxCue-owned SQLite learnings database if needed."""
+    LEARNINGS_DB.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(LEARNINGS_DB) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS learnings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content TEXT NOT NULL,
+                title TEXT,
+                tags TEXT NOT NULL DEFAULT '[]',
+                source TEXT NOT NULL DEFAULT 'local',
+                legacy_path TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.commit()
+
+
+def add_learning(content: str, title: str = "", tags: Optional[List[str]] = None,
+                 source: str = "local", legacy_path: str = "") -> int:
+    """Add a learned memory record to SQLite and return its integer id."""
+    if not content or not content.strip():
+        raise ValueError("learning content is required")
+    ensure_learnings_db()
+    now = datetime.now().isoformat()
+    tag_list = tags if isinstance(tags, list) else []
+    with sqlite3.connect(LEARNINGS_DB) as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO learnings (content, title, tags, source, legacy_path, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (content.strip(), title.strip(), json.dumps(tag_list), source, legacy_path, now, now),
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+
+
+def iter_learnings() -> Iterable[Dict]:
+    """Yield local SQLite learned memory rows."""
+    if not LEARNINGS_DB.exists():
+        return []
+    ensure_learnings_db()
+    with sqlite3.connect(LEARNINGS_DB) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT id, content, title, tags, source, legacy_path, created_at, updated_at FROM learnings ORDER BY updated_at DESC"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def learning_row_to_entry(row: Dict) -> Optional[Dict]:
+    content = row.get("content", "")
+    if not content:
+        return None
+    try:
+        tags = json.loads(row.get("tags") or "[]")
+        if not isinstance(tags, list):
+            tags = []
+    except json.JSONDecodeError:
+        tags = []
+    title = row.get("title") or f"Learning {row.get('id')}"
+    frontmatter = {"title": title, "category": "learnings", "tags": tags}
+    return {
+        "path": f"memory://learning/{row.get('id')}",
+        "title": title,
+        "category": "learnings",
+        "tags": tags,
+        "keywords": extract_keywords(content, frontmatter),
+        "bigrams": extract_bigrams(content, frontmatter),
+        "size": len(content),
+        "modified": row.get("updated_at") or row.get("created_at") or "",
+        "preview": content[:300].replace("\n", " ").strip(),
+        "source": "sqlite",
+        "legacy_path": row.get("legacy_path") or "",
+    }
+
+
+def get_learning_content(learning_id: str) -> str:
+    if not learning_id:
+        return ""
+    if not LEARNINGS_DB.exists():
+        return ""
+    ensure_learnings_db()
+    with sqlite3.connect(LEARNINGS_DB) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT id, content, title, tags, source, legacy_path, created_at, updated_at FROM learnings WHERE id = ?",
+            (learning_id,),
+        ).fetchone()
+    if not row:
+        return ""
+    data = dict(row)
+    lines = []
+    if data.get("title"):
+        lines.append(f"Title: {data['title']}")
+    if data.get("tags"):
+        try:
+            tags = json.loads(data["tags"])
+            if tags:
+                lines.append("Tags: " + ", ".join(str(t) for t in tags))
+        except json.JSONDecodeError:
+            pass
+    if data.get("legacy_path"):
+        lines.append(f"Imported from: {data['legacy_path']}")
+    lines.append(f"Updated: {data.get('updated_at', 'unknown')}")
+    lines.append("---")
+    lines.append(data.get("content", ""))
+    return "\n".join(lines)
+
+
+def index_file(filepath: Path, base_dir: Optional[Path] = None) -> Optional[Dict]:
     """Index a single markdown file."""
     try:
         content = filepath.read_text(encoding="utf-8")
         frontmatter, body = parse_frontmatter(content)
 
-        relative_path = filepath.relative_to(MEMORY_DIR)
+        root = base_dir or MEMORY_DIR
+        relative_path = _entry_path_for(filepath, root)
         stat = filepath.stat()
 
         return {
             "path": str(relative_path),
             "title": frontmatter.get("title", filepath.stem.replace("-", " ").replace("_", " ").title()),
-            "category": frontmatter.get("category", str(relative_path.parent)),
+            "category": frontmatter.get("category", str(filepath.relative_to(root).parent)),
             "tags": frontmatter.get("tags", []),
             "keywords": extract_keywords(body, frontmatter),
             "bigrams": extract_bigrams(body, frontmatter),
@@ -590,23 +746,42 @@ def build_index(single_file: Optional[Path] = None) -> Dict:
     else:
         index = {"files": [], "built": datetime.now().isoformat()}
 
-    # Determine files to index
-    if single_file:
-        md_files = [single_file] if single_file.exists() else []
-    else:
-        md_files = list(MEMORY_DIR.rglob("*.md"))
+    # Determine files to index. New installs use ~/.bloxcue/knowledge; existing
+    # ~/.claude-memory users remain readable without moving files.
+    scan_roots = [MEMORY_DIR]
+    if not single_file:
+        scan_roots = knowledge_dirs()
 
-    for filepath in md_files:
-        # Skip hidden files and scripts directory
-        if any(part.startswith(".") for part in filepath.parts):
-            continue
-        if "scripts" in filepath.parts:
-            continue
+    for root in scan_roots:
+        if single_file:
+            md_files = [single_file] if single_file.exists() else []
+        elif root.exists():
+            md_files = list(root.rglob("*.md"))
+        else:
+            md_files = []
 
-        entry = index_file(filepath)
-        if entry:
+        for filepath in md_files:
+            # Skip hidden files and scripts directory
+            relative_parts = filepath.relative_to(root).parts
+            if any(part.startswith(".") for part in relative_parts):
+                continue
+            if "scripts" in relative_parts:
+                continue
+
+            entry = index_file(filepath, root)
+            if entry:
+                index["files"].append(entry)
+                print(f"Indexed: {entry['path']}")
+
+    # Merge BloxCue-owned SQLite learnings.
+    sqlite_count = 0
+    for row in iter_learnings():
+        entry = learning_row_to_entry(row)
+        if entry and not any(f.get("path") == entry["path"] for f in index["files"]):
             index["files"].append(entry)
-            print(f"Indexed: {entry['path']}")
+            sqlite_count += 1
+    if sqlite_count > 0:
+        print(f"Merged {sqlite_count} SQLite learnings", file=sys.stderr)
 
     # Merge PostgreSQL learnings (if available)
     if HAS_PG_PROVIDER and PG_ENABLED and pg_is_available(PG_DATABASE_URL):
@@ -1121,9 +1296,13 @@ def list_files():
 
 
 def get_file_content(path: str) -> str:
-    """Get full content of a file (or PG learning) for context injection."""
+    """Get full content of a file or learned memory for context injection."""
     if not isinstance(path, str):
         return ""
+
+    if path.startswith("memory://learning/"):
+        learning_id = path.replace("memory://learning/", "", 1)
+        return get_learning_content(learning_id)
 
     # Route pg:// paths to PostgreSQL provider
     if path.startswith("pg://learning/"):
@@ -1132,16 +1311,18 @@ def get_file_content(path: str) -> str:
             return pg_fetch_learning_content(PG_DATABASE_URL, learning_id)
         return ""
 
-    filepath = MEMORY_DIR / path
+    filepath = _resolve_entry_path(path)
+    if filepath is None:
+        return ""
 
     # Security: Validate file is within MEMORY_DIR (prevent path traversal)
     try:
         resolved_path = filepath.resolve()
-        memory_dir_resolved = MEMORY_DIR.resolve()
+        allowed_roots = [d.resolve() for d in knowledge_dirs()]
         # M-1 fix: Use os.sep suffix to prevent prefix bypass
         # (e.g., /a/batch would falsely match /a/b without trailing separator)
-        base = str(memory_dir_resolved)
-        if str(resolved_path) != base and not str(resolved_path).startswith(base + os.sep):
+        if not any(str(resolved_path) == str(root) or str(resolved_path).startswith(str(root) + os.sep)
+                   for root in allowed_roots):
             return ""  # Path traversal attempt - reject silently
     except Exception:
         return ""
@@ -1424,6 +1605,48 @@ def inject_context(query: str, limit: int = 5, max_tokens: Optional[int] = None)
     return "\n\n".join(parts)
 
 
+def import_postgres_learnings(url: str, limit: int = 500) -> int:
+    """Import legacy Continuous-Claude archival_memory rows into SQLite."""
+    if not HAS_PG_PROVIDER:
+        raise RuntimeError("pg_provider is unavailable")
+    if not url:
+        raise ValueError("PostgreSQL URL is required")
+    if not pg_is_available(url):
+        raise RuntimeError("PostgreSQL is not reachable")
+
+    count = 0
+    for learning in pg_fetch_learnings(url, limit=limit):
+        content = learning.get("content", "")
+        metadata = learning.get("metadata", {}) if isinstance(learning.get("metadata"), dict) else {}
+        learning_type = metadata.get("learning_type", "learning")
+        context = metadata.get("context", "")
+        title = learning_type.replace("_", " ").title()
+        if context:
+            title = f"{title}: {context[:80]}"
+        tags = metadata.get("tags", [])
+        if not isinstance(tags, list):
+            tags = []
+        legacy_path = f"pg://learning/{learning.get('id', '')}"
+        add_learning(content, title=title, tags=tags, source="postgres-import", legacy_path=legacy_path)
+        count += 1
+    return count
+
+
+def display_learning_rows(rows: Iterable[Dict]) -> None:
+    rows = list(rows)
+    if not rows:
+        print("No learned memory records.")
+        return
+    for row in rows:
+        try:
+            tags = json.loads(row.get("tags") or "[]")
+        except json.JSONDecodeError:
+            tags = []
+        tags_str = f" [{', '.join(str(t) for t in tags)}]" if tags else ""
+        title = row.get("title") or f"Learning {row.get('id')}"
+        print(f"{row.get('id')}. {title}{tags_str}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="bloxcue Indexer - Index and search context blocks"
@@ -1452,10 +1675,44 @@ def main():
     parser.add_argument(
         "--json", "-j", action="store_true", help="Output as JSON"
     )
+    parser.add_argument(
+        "--add-learning", type=str, help="Add a learned memory record to SQLite"
+    )
+    parser.add_argument(
+        "--learning-title", type=str, default="", help="Title for --add-learning"
+    )
+    parser.add_argument(
+        "--learning-tags", type=str, default="", help="Comma-separated tags for --add-learning"
+    )
+    parser.add_argument(
+        "--list-learnings", action="store_true", help="List SQLite learned memory records"
+    )
+    parser.add_argument(
+        "--import-postgres", type=str, nargs="?", const=PG_DATABASE_URL,
+        help="Import legacy Continuous-Claude archival_memory rows from PostgreSQL into SQLite"
+    )
+    parser.add_argument(
+        "--import-limit", type=int, default=500, help="Max rows for --import-postgres"
+    )
 
     args = parser.parse_args()
 
-    if args.health:
+    if args.add_learning:
+        tags = [t.strip() for t in args.learning_tags.split(",") if t.strip()]
+        learning_id = add_learning(args.add_learning, title=args.learning_title, tags=tags)
+        print(f"Added learning: memory://learning/{learning_id}")
+
+    elif args.list_learnings:
+        if args.json:
+            print(json.dumps(list(iter_learnings()), indent=2))
+        else:
+            display_learning_rows(iter_learnings())
+
+    elif args.import_postgres is not None:
+        imported = import_postgres_learnings(args.import_postgres, limit=args.import_limit)
+        print(f"Imported {imported} learning(s) into {LEARNINGS_DB}")
+
+    elif args.health:
         print(generate_health_report())
 
     elif args.file:

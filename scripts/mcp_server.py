@@ -3,7 +3,7 @@
 BloxCue MCP Server
 
 Exposes BloxCue's context retrieval as an MCP (Model Context Protocol) server.
-Works with Claude Code, Cursor, Windsurf, or any MCP-compatible client.
+Works with Claude Code, Codex, Gemini, Cursor, Windsurf, or any MCP-compatible client.
 
 Usage:
     Add to your MCP config (e.g., ~/.claude/mcp_config.json):
@@ -33,7 +33,7 @@ import indexer
 
 # Server metadata
 SERVER_NAME = "bloxcue"
-SERVER_VERSION = "2.0.0"
+SERVER_VERSION = "3.0.0"
 PROTOCOL_VERSION = "2024-11-05"
 
 # Tool definitions
@@ -108,7 +108,7 @@ TOOLS = [
     },
     {
         "name": "inject_context",
-        "description": "Search and inject relevant context from file blocks and PostgreSQL learnings with smart token budgeting. Returns deduplicated, priority-ranked content formatted for LLM consumption. Use this instead of search_blocks + get_block for one-shot context retrieval.",
+        "description": "Search and inject relevant context from markdown blocks and SQLite learned memory with smart token budgeting. Returns deduplicated, priority-ranked content formatted for LLM consumption. Use this instead of search_blocks + get_block for one-shot context retrieval.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -155,7 +155,11 @@ def handle_search_blocks(arguments: dict) -> dict:
         score = result["score"]
         tags = entry.get("tags", [])
         tags_str = ", ".join(str(t) for t in tags if t) if isinstance(tags, list) else str(tags)
-        source_label = " [PG]" if entry.get("source") == "pg" else ""
+        source_label = ""
+        if entry.get("source") == "pg":
+            source_label = " [legacy PG]"
+        elif entry.get("source") == "sqlite":
+            source_label = " [learning]"
 
         lines.append(f"{i}. **{entry['title']}**{source_label} (score: {score:.1f})")
         lines.append(f"   Path: {entry['path']}")
@@ -228,9 +232,10 @@ def handle_list_blocks(arguments: dict) -> dict:
 
     total = sum(len(v) for v in by_category.values())
     pg_count = sum(1 for entries in by_category.values() for e in entries if e.get("source") == "pg")
-    file_count = total - pg_count
-    if pg_count > 0:
-        lines = [f"**{total} blocks** indexed ({file_count} file, {pg_count} PG)\n"]
+    sqlite_count = sum(1 for entries in by_category.values() for e in entries if e.get("source") == "sqlite")
+    file_count = total - pg_count - sqlite_count
+    if pg_count > 0 or sqlite_count > 0:
+        lines = [f"**{total} blocks** indexed ({file_count} file, {sqlite_count} learning, {pg_count} legacy PG)\n"]
     else:
         lines = [f"**{total} blocks** indexed\n"]
 
@@ -389,12 +394,13 @@ def main():
     # Log to stderr (allowed by MCP spec)
     sys.stderr.write(f"BloxCue MCP Server v{SERVER_VERSION} starting...\n")
     sys.stderr.write(f"Memory directory: {indexer.MEMORY_DIR}\n")
+    sys.stderr.write(f"Learnings database: {indexer.LEARNINGS_DB}\n")
     pg_status = "disabled"
     if getattr(indexer, 'HAS_PG_PROVIDER', False) and indexer.PG_ENABLED:
         pg_status = "enabled"
     elif getattr(indexer, 'HAS_PG_PROVIDER', False):
         pg_status = "available but disabled"
-    sys.stderr.write(f"PostgreSQL integration: {pg_status}\n")
+    sys.stderr.write(f"Legacy PostgreSQL runtime: {pg_status}\n")
     sys.stderr.flush()
 
     for line in sys.stdin:
