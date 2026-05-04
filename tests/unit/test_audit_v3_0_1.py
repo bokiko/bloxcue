@@ -9,6 +9,7 @@ Findings:
 4. MEDIUM - Hook crashes on bad env vars before emitting JSON
 """
 
+import ast
 import importlib
 import json
 import os
@@ -288,3 +289,36 @@ def test_hook_with_bad_env_emits_continue(tmp_path):
     # stdout must be parseable JSON with result=continue
     output = json.loads(proc.stdout.strip())
     assert output.get("result") == "continue", f"Expected continue, got {output}"
+
+
+def test_shipped_python_files_parse_as_python38():
+    """Docs promise Python 3.8+, so shipped scripts/hooks must avoid 3.9+ syntax.
+
+    Examples of syntax that would fail this gate:
+    - PEP 604 union types (`X | Y`) — 3.10+
+    - Walrus in comprehensions — 3.8+ but tightened in 3.9
+    - Dict union via `|` — 3.9+
+    - Parenthesized context managers — 3.10+
+
+    We use `ast.parse(..., feature_version=(3, 8))` to enforce the
+    minimum supported runtime. This catches cases like the
+    `dict | None` annotation that shipped in v3.0.0's mcp_server.py.
+    """
+    targets = list((PROJECT_ROOT / "scripts").glob("*.py")) + list(
+        (PROJECT_ROOT / "hooks").glob("*.py")
+    )
+    assert targets, "Expected at least one shipped Python file under scripts/ or hooks/"
+
+    failures = []
+    for path in sorted(targets):
+        source = path.read_text(encoding="utf-8")
+        try:
+            ast.parse(source, filename=str(path), feature_version=(3, 8))
+        except SyntaxError as exc:
+            rel = path.relative_to(PROJECT_ROOT)
+            failures.append(f"{rel}:{exc.lineno}: {exc.msg}")
+
+    assert not failures, (
+        "Shipped Python files use post-3.8 syntax (README and AGENTS.md "
+        "promise 3.8+):\n  " + "\n  ".join(failures)
+    )
