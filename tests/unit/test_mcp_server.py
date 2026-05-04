@@ -6,8 +6,6 @@ Tests the MCP protocol handling, tool execution, and error cases.
 """
 
 import sys
-import json
-import os
 from pathlib import Path
 
 # Add project root to path
@@ -16,203 +14,205 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 import mcp_server
 
-passed = 0
-failed = 0
-
-
-def check(name, condition):
-    global passed, failed
-    if condition:
-        print(f"  [PASS] {name}")
-        passed += 1
-    else:
-        print(f"  [FAIL] {name}")
-        failed += 1
-
-
-def section(name):
-    print(f"\n{name}")
-    print("-" * 40)
-
 
 # ============================================================
 # Protocol Tests
 # ============================================================
-section("MCP Protocol Tests")
 
-# Test initialize
-response = mcp_server.handle_message({
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "initialize",
-    "params": {
-        "protocolVersion": "2024-11-05",
-        "capabilities": {},
-        "clientInfo": {"name": "test", "version": "1.0"}
-    }
-})
-check("initialize_returns_response", response is not None)
-check("initialize_has_protocol_version", response["result"]["protocolVersion"] == "2024-11-05")
-check("initialize_has_tools_capability", "tools" in response["result"]["capabilities"])
-check("initialize_has_server_info", response["result"]["serverInfo"]["name"] == "bloxcue")
+def test_initialize():
+    """Test MCP initialize handshake."""
+    response = mcp_server.handle_message({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "test", "version": "1.0"}
+        }
+    })
+    assert response is not None, "initialize_returns_response"
+    assert response["result"]["protocolVersion"] == "2024-11-05", "initialize_has_protocol_version"
+    assert "tools" in response["result"]["capabilities"], "initialize_has_tools_capability"
+    assert response["result"]["serverInfo"]["name"] == "bloxcue", "initialize_has_server_info"
 
-# Test ping
-response = mcp_server.handle_message({
-    "jsonrpc": "2.0", "id": 2, "method": "ping", "params": {}
-})
-check("ping_returns_response", response is not None)
-check("ping_result_is_empty", response["result"] == {})
 
-# Test notification (no id) returns None
-response = mcp_server.handle_message({
-    "jsonrpc": "2.0", "method": "notifications/initialized"
-})
-check("notification_returns_none", response is None)
+def test_ping():
+    response = mcp_server.handle_message({
+        "jsonrpc": "2.0", "id": 2, "method": "ping", "params": {}
+    })
+    assert response is not None, "ping_returns_response"
+    assert response["result"] == {}, "ping_result_is_empty"
 
-# Test unknown method
-response = mcp_server.handle_message({
-    "jsonrpc": "2.0", "id": 3, "method": "unknown/method", "params": {}
-})
-check("unknown_method_returns_error", "error" in response)
-check("unknown_method_error_code", response["error"]["code"] == -32601)
+
+def test_notification_returns_none():
+    """Test notification (no id) returns None."""
+    response = mcp_server.handle_message({
+        "jsonrpc": "2.0", "method": "notifications/initialized"
+    })
+    assert response is None, "notification_returns_none"
+
+
+def test_unknown_method_returns_error():
+    response = mcp_server.handle_message({
+        "jsonrpc": "2.0", "id": 3, "method": "unknown/method", "params": {}
+    })
+    assert "error" in response, "unknown_method_returns_error"
+    assert response["error"]["code"] == -32601, "unknown_method_error_code"
+
 
 # ============================================================
 # Tools List Tests
 # ============================================================
-section("Tools List Tests")
 
-response = mcp_server.handle_message({
-    "jsonrpc": "2.0", "id": 4, "method": "tools/list", "params": {}
-})
-tools = response["result"]["tools"]
-check("tools_list_returns_tools", len(tools) == 6)
-tool_names = [t["name"] for t in tools]
-check("has_search_blocks", "search_blocks" in tool_names)
-check("has_get_block", "get_block" in tool_names)
-check("has_list_blocks", "list_blocks" in tool_names)
-check("has_index_blocks", "index_blocks" in tool_names)
-check("has_block_health", "block_health" in tool_names)
-check("has_inject_context", "inject_context" in tool_names)
+def test_tools_list_returns_six_tools():
+    response = mcp_server.handle_message({
+        "jsonrpc": "2.0", "id": 4, "method": "tools/list", "params": {}
+    })
+    tools = response["result"]["tools"]
+    assert len(tools) == 6, "tools_list_returns_tools"
 
-# Check tool schema format
-search_tool = next(t for t in tools if t["name"] == "search_blocks")
-check("search_has_description", len(search_tool["description"]) > 0)
-check("search_has_input_schema", "inputSchema" in search_tool)
-check("search_requires_query", "query" in search_tool["inputSchema"].get("required", []))
+
+def test_tools_list_contains_expected_tools():
+    response = mcp_server.handle_message({
+        "jsonrpc": "2.0", "id": 4, "method": "tools/list", "params": {}
+    })
+    tools = response["result"]["tools"]
+    tool_names = [t["name"] for t in tools]
+    assert "search_blocks" in tool_names, "has_search_blocks"
+    assert "get_block" in tool_names, "has_get_block"
+    assert "list_blocks" in tool_names, "has_list_blocks"
+    assert "index_blocks" in tool_names, "has_index_blocks"
+    assert "block_health" in tool_names, "has_block_health"
+    assert "inject_context" in tool_names, "has_inject_context"
+
+
+def test_search_blocks_tool_schema():
+    response = mcp_server.handle_message({
+        "jsonrpc": "2.0", "id": 4, "method": "tools/list", "params": {}
+    })
+    tools = response["result"]["tools"]
+    search_tool = next(t for t in tools if t["name"] == "search_blocks")
+    assert len(search_tool["description"]) > 0, "search_has_description"
+    assert "inputSchema" in search_tool, "search_has_input_schema"
+    assert "query" in search_tool["inputSchema"].get("required", []), "search_requires_query"
+
 
 # ============================================================
 # Tool Execution Tests
 # ============================================================
-section("Tool Execution Tests")
 
-# Test search_blocks
-response = mcp_server.handle_message({
-    "jsonrpc": "2.0", "id": 5, "method": "tools/call",
-    "params": {"name": "search_blocks", "arguments": {"query": "deployment"}}
-})
-check("search_blocks_succeeds", "result" in response)
-check("search_blocks_has_content", len(response["result"]["content"]) > 0)
-check("search_blocks_content_is_text", response["result"]["content"][0]["type"] == "text")
-check("search_blocks_finds_results", "Found" in response["result"]["content"][0]["text"])
+def test_search_blocks_execution():
+    response = mcp_server.handle_message({
+        "jsonrpc": "2.0", "id": 5, "method": "tools/call",
+        "params": {"name": "search_blocks", "arguments": {"query": "deployment"}}
+    })
+    assert "result" in response, "search_blocks_succeeds"
+    assert len(response["result"]["content"]) > 0, "search_blocks_has_content"
+    assert response["result"]["content"][0]["type"] == "text", "search_blocks_content_is_text"
+    assert "Found" in response["result"]["content"][0]["text"], "search_blocks_finds_results"
 
-# Test search_blocks with empty query
-response = mcp_server.handle_message({
-    "jsonrpc": "2.0", "id": 6, "method": "tools/call",
-    "params": {"name": "search_blocks", "arguments": {}}
-})
-check("search_empty_query_is_error", response["result"].get("isError") == True)
 
-# Test list_blocks
-response = mcp_server.handle_message({
-    "jsonrpc": "2.0", "id": 7, "method": "tools/call",
-    "params": {"name": "list_blocks", "arguments": {}}
-})
-check("list_blocks_succeeds", "result" in response)
-check("list_blocks_has_content", len(response["result"]["content"]) > 0)
-check("list_blocks_shows_count", "blocks" in response["result"]["content"][0]["text"].lower())
+def test_search_blocks_empty_query_is_error():
+    response = mcp_server.handle_message({
+        "jsonrpc": "2.0", "id": 6, "method": "tools/call",
+        "params": {"name": "search_blocks", "arguments": {}}
+    })
+    assert response["result"].get("isError") == True, "search_empty_query_is_error"
 
-# Test block_health
-response = mcp_server.handle_message({
-    "jsonrpc": "2.0", "id": 8, "method": "tools/call",
-    "params": {"name": "block_health", "arguments": {}}
-})
-check("block_health_succeeds", "result" in response)
-check("block_health_has_report", "Health Report" in response["result"]["content"][0]["text"])
 
-# Test unknown tool
-response = mcp_server.handle_message({
-    "jsonrpc": "2.0", "id": 9, "method": "tools/call",
-    "params": {"name": "nonexistent_tool", "arguments": {}}
-})
-check("unknown_tool_returns_error", "error" in response)
+def test_list_blocks_execution():
+    response = mcp_server.handle_message({
+        "jsonrpc": "2.0", "id": 7, "method": "tools/call",
+        "params": {"name": "list_blocks", "arguments": {}}
+    })
+    assert "result" in response, "list_blocks_succeeds"
+    assert len(response["result"]["content"]) > 0, "list_blocks_has_content"
+    assert "blocks" in response["result"]["content"][0]["text"].lower(), "list_blocks_shows_count"
 
-# Test inject_context
-response = mcp_server.handle_message({
-    "jsonrpc": "2.0", "id": 20, "method": "tools/call",
-    "params": {"name": "inject_context", "arguments": {"query": "deployment"}}
-})
-check("inject_context_succeeds", "result" in response)
-check("inject_context_has_content", len(response["result"]["content"]) > 0)
-check("inject_context_has_metadata", "BloxCue" in response["result"]["content"][0]["text"])
 
-# Test inject_context with empty query
-response = mcp_server.handle_message({
-    "jsonrpc": "2.0", "id": 21, "method": "tools/call",
-    "params": {"name": "inject_context", "arguments": {}}
-})
-check("inject_empty_query_is_error", response["result"].get("isError") == True)
+def test_block_health_execution():
+    response = mcp_server.handle_message({
+        "jsonrpc": "2.0", "id": 8, "method": "tools/call",
+        "params": {"name": "block_health", "arguments": {}}
+    })
+    assert "result" in response, "block_health_succeeds"
+    assert "Health Report" in response["result"]["content"][0]["text"], "block_health_has_report"
 
-# Test inject_context with token budget
-response = mcp_server.handle_message({
-    "jsonrpc": "2.0", "id": 22, "method": "tools/call",
-    "params": {"name": "inject_context", "arguments": {"query": "deployment", "max_tokens": 500}}
-})
-check("inject_with_budget_succeeds", "result" in response)
-check("inject_budget_has_bloxcue_header", "BloxCue" in response["result"]["content"][0]["text"])
+
+def test_unknown_tool_returns_error():
+    response = mcp_server.handle_message({
+        "jsonrpc": "2.0", "id": 9, "method": "tools/call",
+        "params": {"name": "nonexistent_tool", "arguments": {}}
+    })
+    assert "error" in response, "unknown_tool_returns_error"
+
+
+def test_inject_context_execution():
+    response = mcp_server.handle_message({
+        "jsonrpc": "2.0", "id": 20, "method": "tools/call",
+        "params": {"name": "inject_context", "arguments": {"query": "deployment"}}
+    })
+    assert "result" in response, "inject_context_succeeds"
+    assert len(response["result"]["content"]) > 0, "inject_context_has_content"
+    assert "BloxCue" in response["result"]["content"][0]["text"], "inject_context_has_metadata"
+
+
+def test_inject_context_empty_query_is_error():
+    response = mcp_server.handle_message({
+        "jsonrpc": "2.0", "id": 21, "method": "tools/call",
+        "params": {"name": "inject_context", "arguments": {}}
+    })
+    assert response["result"].get("isError") == True, "inject_empty_query_is_error"
+
+
+def test_inject_context_with_token_budget():
+    response = mcp_server.handle_message({
+        "jsonrpc": "2.0", "id": 22, "method": "tools/call",
+        "params": {"name": "inject_context", "arguments": {"query": "deployment", "max_tokens": 500}}
+    })
+    assert "result" in response, "inject_with_budget_succeeds"
+    assert "BloxCue" in response["result"]["content"][0]["text"], "inject_budget_has_bloxcue_header"
+
 
 # ============================================================
 # Security Tests
 # ============================================================
-section("Security Tests")
 
-# Test path traversal in get_block
-response = mcp_server.handle_message({
-    "jsonrpc": "2.0", "id": 10, "method": "tools/call",
-    "params": {"name": "get_block", "arguments": {"path": "../../../etc/passwd"}}
-})
-check("path_traversal_blocked", response["result"].get("isError") == True)
-check("path_traversal_no_content", "root:" not in response["result"]["content"][0]["text"])
+def test_path_traversal_blocked():
+    response = mcp_server.handle_message({
+        "jsonrpc": "2.0", "id": 10, "method": "tools/call",
+        "params": {"name": "get_block", "arguments": {"path": "../../../etc/passwd"}}
+    })
+    assert response["result"].get("isError") == True, "path_traversal_blocked"
+    assert "root:" not in response["result"]["content"][0]["text"], "path_traversal_no_content"
 
-# Test empty path
-response = mcp_server.handle_message({
-    "jsonrpc": "2.0", "id": 11, "method": "tools/call",
-    "params": {"name": "get_block", "arguments": {"path": ""}}
-})
-check("empty_path_is_error", response["result"].get("isError") == True)
+
+def test_empty_path_is_error():
+    response = mcp_server.handle_message({
+        "jsonrpc": "2.0", "id": 11, "method": "tools/call",
+        "params": {"name": "get_block", "arguments": {"path": ""}}
+    })
+    assert response["result"].get("isError") == True, "empty_path_is_error"
+
 
 # ============================================================
 # Helper Function Tests
 # ============================================================
-section("Helper Function Tests")
 
-# Test make_response
-resp = mcp_server.make_response(42, {"test": True})
-check("make_response_format", resp["jsonrpc"] == "2.0" and resp["id"] == 42 and resp["result"]["test"] == True)
-
-# Test make_error
-err = mcp_server.make_error(43, -32600, "Invalid request")
-check("make_error_format", err["error"]["code"] == -32600 and err["error"]["message"] == "Invalid request")
-
-# Test make_error with data
-err = mcp_server.make_error(44, -32602, "Bad params", {"detail": "missing field"})
-check("make_error_with_data", err["error"]["data"]["detail"] == "missing field")
-
-# ============================================================
-# Summary
-# ============================================================
-print(f"\n{'='*60}")
-print(f"Results: {passed}/{passed+failed} passed, {failed} failed")
+def test_make_response_format():
+    resp = mcp_server.make_response(42, {"test": True})
+    assert resp["jsonrpc"] == "2.0", "make_response_format_jsonrpc"
+    assert resp["id"] == 42, "make_response_format_id"
+    assert resp["result"]["test"] == True, "make_response_format_result"
 
 
-if __name__ == "__main__":
-    pass
+def test_make_error_format():
+    err = mcp_server.make_error(43, -32600, "Invalid request")
+    assert err["error"]["code"] == -32600, "make_error_format_code"
+    assert err["error"]["message"] == "Invalid request", "make_error_format_message"
+
+
+def test_make_error_with_data():
+    err = mcp_server.make_error(44, -32602, "Bad params", {"detail": "missing field"})
+    assert err["error"]["data"]["detail"] == "missing field", "make_error_with_data"

@@ -48,7 +48,7 @@ except (ValueError, TypeError):
 
 # PostgreSQL integration (optional)
 PG_DATABASE_URL = os.environ.get("BLOXCUE_DATABASE_URL", os.environ.get("DATABASE_URL", ""))
-PG_ENABLED = bool(PG_DATABASE_URL) and os.environ.get("BLOXCUE_PG_ENABLED", "1") != "0"
+PG_ENABLED = bool(PG_DATABASE_URL) and os.environ.get("BLOXCUE_PG_ENABLED", "1").lower() in ("1", "true", "yes", "on")
 try:
     PG_CACHE_TTL = int(os.environ.get("BLOXCUE_PG_CACHE_TTL", "300"))
 except (ValueError, TypeError):
