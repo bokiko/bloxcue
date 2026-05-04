@@ -12,7 +12,6 @@ Tests cover:
 """
 
 import sys
-import math
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -26,37 +25,16 @@ from indexer import (
     calculate_doc_stats,
     calculate_idf,
     porter_stem,
-    normalize_word,
     search,
     SYNONYM_MAP,
 )
 
-passed = 0
-failed = 0
-
-
-def check(name, condition):
-    global passed, failed
-    if condition:
-        print(f"  [PASS] {name}")
-        passed += 1
-    else:
-        print(f"  [FAIL] {name}")
-        failed += 1
-
-
-def section(name):
-    print(f"\n{name}")
-    print("-" * 40)
-
 
 # ============================================================
-# BM25 Score Function Tests
+# Shared mock index used across BM25 tests
 # ============================================================
-section("BM25 Score Function Tests")
 
-# Build a mock index with known stats
-mock_index = {
+MOCK_INDEX = {
     "files": [
         {
             "path": "guides/deploy.md",
@@ -91,191 +69,245 @@ mock_index = {
     ]
 }
 
-mock_idf = calculate_idf(mock_index)
-mock_doc_stats = calculate_doc_stats(mock_index)
+MOCK_IDF = calculate_idf(MOCK_INDEX)
+MOCK_DOC_STATS = calculate_doc_stats(MOCK_INDEX)
+DEPLOY_STEM = porter_stem("deploy")
 
-# Test basic BM25 scoring
-deploy_stem = porter_stem("deploy")
-score = bm25_score(deploy_stem, "guides/deploy.md", mock_doc_stats, mock_idf)
-check("bm25_returns_positive_for_matching_term", score > 0)
 
-# Test BM25 returns 0 for non-matching term
-score_miss = bm25_score(porter_stem("nonexistent"), "guides/deploy.md", mock_doc_stats, mock_idf)
-check("bm25_returns_zero_for_missing_term", score_miss == 0.0)
+# ============================================================
+# BM25 Score Function Tests
+# ============================================================
 
-# Test BM25 returns 0 for unknown doc
-score_unknown = bm25_score(deploy_stem, "unknown/path.md", mock_doc_stats, mock_idf)
-check("bm25_returns_zero_for_unknown_doc", score_unknown == 0.0)
+def test_bm25_returns_positive_for_matching_term():
+    score = bm25_score(DEPLOY_STEM, "guides/deploy.md", MOCK_DOC_STATS, MOCK_IDF)
+    assert score > 0, "bm25_returns_positive_for_matching_term"
 
-# Test BM25 returns 0 for term with zero IDF
-score_no_idf = bm25_score("zzzzzzz", "guides/deploy.md", mock_doc_stats, {})
-check("bm25_returns_zero_for_zero_idf", score_no_idf == 0.0)
 
-# Test that term appearing in title-heavy doc scores higher (title weight=3)
-deploy_in_deploy = bm25_score(deploy_stem, "guides/deploy.md", mock_doc_stats, mock_idf)
-deploy_in_testing = bm25_score(deploy_stem, "guides/testing.md", mock_doc_stats, mock_idf)
-check("bm25_title_match_scores_higher", deploy_in_deploy > deploy_in_testing)
+def test_bm25_returns_zero_for_missing_term():
+    score_miss = bm25_score(porter_stem("nonexistent"), "guides/deploy.md", MOCK_DOC_STATS, MOCK_IDF)
+    assert score_miss == 0.0, "bm25_returns_zero_for_missing_term"
 
-# Test BM25 signature accepts k1 and b parameters
-score_custom = bm25_score(deploy_stem, "guides/deploy.md", mock_doc_stats, mock_idf, k1=2.0, b=0.5)
-check("bm25_accepts_custom_params", score_custom > 0)
+
+def test_bm25_returns_zero_for_unknown_doc():
+    score_unknown = bm25_score(DEPLOY_STEM, "unknown/path.md", MOCK_DOC_STATS, MOCK_IDF)
+    assert score_unknown == 0.0, "bm25_returns_zero_for_unknown_doc"
+
+
+def test_bm25_returns_zero_for_zero_idf():
+    score_no_idf = bm25_score("zzzzzzz", "guides/deploy.md", MOCK_DOC_STATS, {})
+    assert score_no_idf == 0.0, "bm25_returns_zero_for_zero_idf"
+
+
+def test_bm25_title_match_scores_higher():
+    """Term appearing in title-heavy doc should score higher (title weight=3)."""
+    deploy_in_deploy = bm25_score(DEPLOY_STEM, "guides/deploy.md", MOCK_DOC_STATS, MOCK_IDF)
+    deploy_in_testing = bm25_score(DEPLOY_STEM, "guides/testing.md", MOCK_DOC_STATS, MOCK_IDF)
+    assert deploy_in_deploy > deploy_in_testing, "bm25_title_match_scores_higher"
+
+
+def test_bm25_accepts_custom_params():
+    score_custom = bm25_score(DEPLOY_STEM, "guides/deploy.md", MOCK_DOC_STATS, MOCK_IDF, k1=2.0, b=0.5)
+    assert score_custom > 0, "bm25_accepts_custom_params"
 
 
 # ============================================================
 # Query Expansion Tests
 # ============================================================
-section("Query Expansion Tests")
 
-# Test basic expansion
-expanded = expand_query(["db"])
-terms = [t for t, _ in expanded]
-check("expand_includes_original", any(t == "db" for t, _ in expanded))
-check("expand_includes_synonym", any(porter_stem("database") == t for t, _ in expanded))
+def test_expand_includes_original():
+    expanded = expand_query(["db"])
+    assert any(t == "db" for t, _ in expanded), "expand_includes_original"
 
-# Test original term has weight 1.0
-orig_weights = [w for t, w in expanded if t == "db"]
-check("original_term_weight_is_1", orig_weights[0] == 1.0)
 
-# Test expanded terms have weight 0.4
-syn_weights = [w for t, w in expanded if t != "db"]
-check("synonym_weight_is_04", all(w == 0.4 for w in syn_weights))
+def test_expand_includes_synonym():
+    expanded = expand_query(["db"])
+    assert any(porter_stem("database") == t for t, _ in expanded), "expand_includes_synonym"
 
-# Test no expansion for unknown term
-expanded_unknown = expand_query(["xyzzy123"])
-check("no_expansion_for_unknown", len(expanded_unknown) == 1)
 
-# Test max_expansions limit
-expanded_limited = expand_query(["error"], max_expansions=1)
-# "error" maps to ["bug", "exception", "failure"] but limit=1 means only first synonym
-syn_count = len([t for t, w in expanded_limited if w < 1.0])
-check("max_expansions_respected", syn_count <= 1)
+def test_original_term_weight_is_1():
+    expanded = expand_query(["db"])
+    orig_weights = [w for t, w in expanded if t == "db"]
+    assert orig_weights[0] == 1.0, "original_term_weight_is_1"
 
-# Test SYNONYM_MAP has expected entries
-check("synonym_map_has_db", "db" in SYNONYM_MAP)
-check("synonym_map_has_api", "api" in SYNONYM_MAP)
-check("synonym_map_has_deploy", "deploy" in SYNONYM_MAP)
-check("synonym_map_has_k8s", "k8s" in SYNONYM_MAP)
 
-# Test bidirectional synonyms
-check("synonym_db_contains_database", "database" in SYNONYM_MAP["db"])
-check("synonym_database_contains_db", "db" in SYNONYM_MAP["database"])
+def test_synonym_weight_is_04():
+    expanded = expand_query(["db"])
+    syn_weights = [w for t, w in expanded if t != "db"]
+    assert all(w == 0.4 for w in syn_weights), "synonym_weight_is_04"
+
+
+def test_no_expansion_for_unknown():
+    expanded_unknown = expand_query(["xyzzy123"])
+    assert len(expanded_unknown) == 1, "no_expansion_for_unknown"
+
+
+def test_max_expansions_respected():
+    expanded_limited = expand_query(["error"], max_expansions=1)
+    syn_count = len([t for t, w in expanded_limited if w < 1.0])
+    assert syn_count <= 1, "max_expansions_respected"
+
+
+def test_synonym_map_has_db():
+    assert "db" in SYNONYM_MAP, "synonym_map_has_db"
+
+
+def test_synonym_map_has_api():
+    assert "api" in SYNONYM_MAP, "synonym_map_has_api"
+
+
+def test_synonym_map_has_deploy():
+    assert "deploy" in SYNONYM_MAP, "synonym_map_has_deploy"
+
+
+def test_synonym_map_has_k8s():
+    assert "k8s" in SYNONYM_MAP, "synonym_map_has_k8s"
+
+
+def test_synonym_db_contains_database():
+    assert "database" in SYNONYM_MAP["db"], "synonym_db_contains_database"
+
+
+def test_synonym_database_contains_db():
+    assert "db" in SYNONYM_MAP["database"], "synonym_database_contains_db"
 
 
 # ============================================================
 # Document Stats Tests
 # ============================================================
-section("Document Stats Tests")
 
-check("doc_stats_has_avg_dl", "avg_dl" in mock_doc_stats)
-check("doc_stats_has_docs", "docs" in mock_doc_stats)
-check("doc_stats_avg_dl_positive", mock_doc_stats["avg_dl"] > 0)
+def test_doc_stats_has_avg_dl():
+    assert "avg_dl" in MOCK_DOC_STATS, "doc_stats_has_avg_dl"
 
-# Check per-document stats
-deploy_stats = mock_doc_stats["docs"].get("guides/deploy.md", {})
-check("doc_has_tf", "tf" in deploy_stats)
-check("doc_has_dl", "dl" in deploy_stats)
-check("doc_dl_positive", deploy_stats["dl"] > 0)
 
-# Title terms should have weight 3 in tf
-deploy_tf = deploy_stats["tf"]
-check("title_term_weighted_3x", deploy_tf.get(porter_stem("deploy"), 0) >= 3)
+def test_doc_stats_has_docs():
+    assert "docs" in MOCK_DOC_STATS, "doc_stats_has_docs"
 
-# Test empty index produces valid stats
-empty_stats = calculate_doc_stats({"files": []})
-check("empty_index_avg_dl_is_1", empty_stats["avg_dl"] == 1.0)
-check("empty_index_no_docs", len(empty_stats["docs"]) == 0)
+
+def test_doc_stats_avg_dl_positive():
+    assert MOCK_DOC_STATS["avg_dl"] > 0, "doc_stats_avg_dl_positive"
+
+
+def test_doc_has_tf():
+    deploy_stats = MOCK_DOC_STATS["docs"].get("guides/deploy.md", {})
+    assert "tf" in deploy_stats, "doc_has_tf"
+
+
+def test_doc_has_dl():
+    deploy_stats = MOCK_DOC_STATS["docs"].get("guides/deploy.md", {})
+    assert "dl" in deploy_stats, "doc_has_dl"
+
+
+def test_doc_dl_positive():
+    deploy_stats = MOCK_DOC_STATS["docs"].get("guides/deploy.md", {})
+    assert deploy_stats["dl"] > 0, "doc_dl_positive"
+
+
+def test_title_term_weighted_3x():
+    """Title terms should have weight 3 in tf."""
+    deploy_stats = MOCK_DOC_STATS["docs"].get("guides/deploy.md", {})
+    deploy_tf = deploy_stats["tf"]
+    assert deploy_tf.get(porter_stem("deploy"), 0) >= 3, "title_term_weighted_3x"
+
+
+def test_empty_index_avg_dl_is_1():
+    empty_stats = calculate_doc_stats({"files": []})
+    assert empty_stats["avg_dl"] == 1.0, "empty_index_avg_dl_is_1"
+
+
+def test_empty_index_no_docs():
+    empty_stats = calculate_doc_stats({"files": []})
+    assert len(empty_stats["docs"]) == 0, "empty_index_no_docs"
 
 
 # ============================================================
 # Search Integration Tests
 # ============================================================
-section("Search Integration Tests")
 
-# Test search returns list
-results = search("test query")
-check("search_returns_list", isinstance(results, list))
+def test_search_returns_list():
+    results = search("test query")
+    assert isinstance(results, list), "search_returns_list"
 
-# Test search respects limit
-results_limited = search("test", limit=2)
-check("search_respects_limit", len(results_limited) <= 2)
 
-# Test search returns scored results
-if results:
-    check("search_results_have_score", "score" in results[0])
-    check("search_results_have_entry", "entry" in results[0])
-    check("search_scores_are_positive", all(r["score"] > 0 for r in results))
-else:
-    check("search_results_have_score", True)  # No results is valid
-    check("search_results_have_entry", True)
-    check("search_scores_are_positive", True)
+def test_search_respects_limit():
+    results_limited = search("test", limit=2)
+    assert len(results_limited) <= 2, "search_respects_limit"
 
-# Test results are sorted by score (descending)
-if len(results) > 1:
-    scores = [r["score"] for r in results]
-    check("search_results_sorted_desc", all(scores[i] >= scores[i+1] for i in range(len(scores)-1)))
-else:
-    check("search_results_sorted_desc", True)
 
-# Test empty query returns empty or handles gracefully
-empty_results = search("")
-check("empty_query_returns_list", isinstance(empty_results, list))
+def test_search_results_have_score_and_entry():
+    results = search("test query")
+    if results:
+        assert "score" in results[0], "search_results_have_score"
+        assert "entry" in results[0], "search_results_have_entry"
+        assert all(r["score"] > 0 for r in results), "search_scores_are_positive"
+
+
+def test_search_results_sorted_desc():
+    results = search("test query")
+    if len(results) > 1:
+        scores = [r["score"] for r in results]
+        assert all(scores[i] >= scores[i + 1] for i in range(len(scores) - 1)), "search_results_sorted_desc"
+
+
+def test_empty_query_returns_list():
+    empty_results = search("")
+    assert isinstance(empty_results, list), "empty_query_returns_list"
 
 
 # ============================================================
 # Recency Boost Tests
 # ============================================================
-section("Recency Boost Behavior")
 
-# Verify recency factor calculation matches expected behavior
-# Fresh doc (0 days): factor = 1.0 + 0.1 / (1.0 + 0/30) = 1.1
-# 30-day-old doc: factor = 1.0 + 0.1 / (1.0 + 1) = 1.05
-# 90-day-old doc: factor = 1.0 + 0.1 / (1.0 + 3) = 1.025
-# 120-day-old doc: factor = 1.0 + 0.1 / (1.0 + 4) = 1.02
+def test_recency_fresh_is_highest():
+    """Verify recency factor calculation matches expected behavior."""
+    fresh_factor = 1.0 + 0.1 / (1.0 + 0 / 30.0)
+    aging_factor = 1.0 + 0.1 / (1.0 + 30 / 30.0)
+    stale_factor = 1.0 + 0.1 / (1.0 + 120 / 30.0)
+    assert fresh_factor > aging_factor > stale_factor, "recency_fresh_is_highest"
 
-fresh_factor = 1.0 + 0.1 / (1.0 + 0 / 30.0)
-aging_factor = 1.0 + 0.1 / (1.0 + 30 / 30.0)
-stale_factor = 1.0 + 0.1 / (1.0 + 120 / 30.0)
 
-check("recency_fresh_is_highest", fresh_factor > aging_factor > stale_factor)
-check("recency_boost_max_is_10pct", fresh_factor <= 1.11)
-check("recency_boost_always_positive", stale_factor > 1.0)
+def test_recency_boost_max_is_10pct():
+    fresh_factor = 1.0 + 0.1 / (1.0 + 0 / 30.0)
+    assert fresh_factor <= 1.11, "recency_boost_max_is_10pct"
+
+
+def test_recency_boost_always_positive():
+    stale_factor = 1.0 + 0.1 / (1.0 + 120 / 30.0)
+    assert stale_factor > 1.0, "recency_boost_always_positive"
 
 
 # ============================================================
 # MMR Diversity Tests
 # ============================================================
-section("MMR Diversity Behavior")
 
-# MMR with lambda=0.7 should prefer relevance but penalize overlap
-# If two docs have same score but identical keywords, second should be penalized
-relevance = 10.0
-overlap_0 = 0.7 * relevance - 0.3 * 0.0 * relevance  # no overlap
-overlap_1 = 0.7 * relevance - 0.3 * 1.0 * relevance  # full overlap
+def test_mmr_no_overlap_higher():
+    """MMR with lambda=0.7 should prefer relevance but penalize overlap."""
+    relevance = 10.0
+    overlap_0 = 0.7 * relevance - 0.3 * 0.0 * relevance  # no overlap
+    overlap_1 = 0.7 * relevance - 0.3 * 1.0 * relevance  # full overlap
+    assert overlap_0 > overlap_1, "mmr_no_overlap_higher"
 
-check("mmr_no_overlap_higher", overlap_0 > overlap_1)
-check("mmr_full_overlap_penalized", overlap_1 == 0.7 * relevance - 0.3 * relevance)
-check("mmr_no_overlap_equals_70pct", abs(overlap_0 - 7.0) < 0.001)
+
+def test_mmr_full_overlap_penalized():
+    relevance = 10.0
+    overlap_1 = 0.7 * relevance - 0.3 * 1.0 * relevance
+    assert overlap_1 == 0.7 * relevance - 0.3 * relevance, "mmr_full_overlap_penalized"
+
+
+def test_mmr_no_overlap_equals_70pct():
+    relevance = 10.0
+    overlap_0 = 0.7 * relevance - 0.3 * 0.0 * relevance
+    assert abs(overlap_0 - 7.0) < 0.001, "mmr_no_overlap_equals_70pct"
 
 
 # ============================================================
 # Query Expansion + BM25 Integration
 # ============================================================
-section("Query Expansion + BM25 Integration")
 
-# Search for "db" should also match documents about "database" via synonym expansion
-# This is an indirect test - if synonyms work, search("db") and search("database")
-# should return overlapping results
-results_db = search("db")
-results_database = search("database")
-check("synonym_search_db_returns_list", isinstance(results_db, list))
-check("synonym_search_database_returns_list", isinstance(results_database, list))
+def test_synonym_search_db_returns_list():
+    results_db = search("db")
+    assert isinstance(results_db, list), "synonym_search_db_returns_list"
 
 
-# ============================================================
-# Summary
-# ============================================================
-print(f"\n{'='*60}")
-print(f"Results: {passed}/{passed+failed} passed, {failed} failed")
-
-if __name__ == "__main__":
-    pass
+def test_synonym_search_database_returns_list():
+    results_database = search("database")
+    assert isinstance(results_database, list), "synonym_search_database_returns_list"
