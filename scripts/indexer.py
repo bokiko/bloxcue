@@ -716,8 +716,41 @@ def get_learning_content(learning_id: str) -> str:
 
 
 def index_file(filepath: Path, base_dir: Optional[Path] = None) -> Optional[Dict]:
-    """Index a single markdown file."""
+    """Index a single markdown file.
+
+    Security (v3.0.1): resolve the real path and reject anything that lands
+    outside an allowed knowledge root. This prevents a symlink inside
+    MEMORY_DIR (e.g. ~/.bloxcue/knowledge/leak.md -> /etc/passwd) from
+    leaking external file content into index previews. Symlinks pointing
+    at files inside the memory dirs remain legitimate and are allowed.
+    """
     try:
+        # Resolve symlinks before deciding whether the file is in scope.
+        try:
+            resolved = filepath.resolve()
+        except (OSError, RuntimeError):
+            return None
+
+        allowed_roots = []
+        for d in knowledge_dirs():
+            try:
+                allowed_roots.append(d.resolve())
+            except (OSError, RuntimeError):
+                continue
+
+        # Use the os.sep suffix trick (mirrors get_file_content) so a
+        # sibling like /a/.bloxcue-evil cannot satisfy a /a/.bloxcue base.
+        in_allowed = any(
+            str(resolved) == str(root) or str(resolved).startswith(str(root) + os.sep)
+            for root in allowed_roots
+        )
+        if not in_allowed:
+            print(
+                f"Skipping symlink outside memory root: {filepath}",
+                file=sys.stderr,
+            )
+            return None
+
         content = filepath.read_text(encoding="utf-8")
         frontmatter, body = parse_frontmatter(content)
 

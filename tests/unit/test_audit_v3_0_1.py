@@ -62,6 +62,81 @@ def reloadable_indexer():
 
 
 # ============================================================
+# Finding 1: Symlink indexing leak
+# ============================================================
+
+def test_symlink_to_outside_file_rejected(tmp_path, monkeypatch, reloadable_indexer):
+    """A symlink inside MEMORY_DIR pointing to an external file must NOT be indexed."""
+    # Build a fresh memory dir
+    memory_dir = tmp_path / "knowledge"
+    memory_dir.mkdir()
+
+    # Legit file (should be indexed)
+    legit = memory_dir / "legit.md"
+    legit.write_text("---\ntitle: Legit\n---\n\nThis is a legitimate block.\n", encoding="utf-8")
+
+    # External file with secret content
+    external = tmp_path / "external_secret.md"
+    external.write_text(
+        "---\ntitle: SECRET\n---\n\nROOT_PASSWORD=hunter2_super_secret_marker\n",
+        encoding="utf-8",
+    )
+
+    # Symlink inside memory dir pointing to the external file
+    leak = memory_dir / "leak.md"
+    leak.symlink_to(external)
+
+    monkeypatch.setenv("BLOXCUE_MEMORY_DIR", str(memory_dir))
+    monkeypatch.setenv("BLOXCUE_LEARNINGS_DB", str(tmp_path / "learnings.db"))
+    monkeypatch.setenv("BLOXCUE_INDEX_FILE", str(tmp_path / "test_index.json"))
+    monkeypatch.setenv("BLOXCUE_USAGE_FILE", str(tmp_path / "test_usage.jsonl"))
+
+    indexer = reloadable_indexer()
+
+    index = indexer.build_index()
+    files = index.get("files", [])
+    paths = [f.get("path", "") for f in files]
+    previews = " ".join(f.get("preview", "") for f in files)
+
+    # The leak file must not be indexed
+    assert "leak.md" not in paths, f"Symlink to external file was indexed: {paths}"
+    # The secret content must not appear anywhere in the index
+    assert "hunter2_super_secret_marker" not in previews, (
+        "External secret content leaked into index preview"
+    )
+    # The legit file should still be present
+    assert any(p.endswith("legit.md") for p in paths), f"Legit file missing from index: {paths}"
+
+
+def test_symlink_inside_memory_dir_allowed(tmp_path, monkeypatch, reloadable_indexer):
+    """A symlink inside MEMORY_DIR pointing to another file inside MEMORY_DIR is legitimate."""
+    memory_dir = tmp_path / "knowledge"
+    memory_dir.mkdir()
+    target = memory_dir / "target.md"
+    target.write_text(
+        "---\ntitle: Target\n---\n\nInternal content unique_internal_marker.\n",
+        encoding="utf-8",
+    )
+    inside_link = memory_dir / "alias.md"
+    inside_link.symlink_to(target)
+
+    monkeypatch.setenv("BLOXCUE_MEMORY_DIR", str(memory_dir))
+    monkeypatch.setenv("BLOXCUE_LEARNINGS_DB", str(tmp_path / "learnings.db"))
+    monkeypatch.setenv("BLOXCUE_INDEX_FILE", str(tmp_path / "test_index.json"))
+    monkeypatch.setenv("BLOXCUE_USAGE_FILE", str(tmp_path / "test_usage.jsonl"))
+
+    indexer = reloadable_indexer()
+    index = indexer.build_index()
+    paths = [f.get("path", "") for f in index.get("files", [])]
+    # At least the target should be indexed; the alias may or may not be present
+    # depending on rglob behavior with symlinks, but neither should be rejected
+    # for security reasons.
+    assert any(p.endswith("target.md") for p in paths), (
+        f"target.md should be indexed: {paths}"
+    )
+
+
+# ============================================================
 # Finding 2: INDEX_FILE/USAGE_FILE under MEMORY_DIR
 # ============================================================
 
