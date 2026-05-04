@@ -22,12 +22,25 @@ The same engine indexes locally-captured "learned memory" (decisions, fixes, pat
 
 ## Quick Start
 
+**Fresh install:**
+
 ```bash
 git clone https://github.com/bokiko/bloxcue.git ~/bloxcue
 cd ~/bloxcue
 ./install.sh --auto
 python3 ~/.bloxcue/knowledge/scripts/indexer.py --search "getting started"
 ```
+
+**Already have `~/bloxcue/` from v2?** `git clone` will fail silently and leave you running the old installer. Use `git pull` instead:
+
+```bash
+cd ~/bloxcue
+git pull origin main
+./install.sh --auto
+python3 ~/.bloxcue/knowledge/scripts/indexer.py --search "getting started"
+```
+
+If the installer banner says *"Save 90% of your tokens"* or the first path option is `~/.claude-memory`, you're running the v2 installer — pull again and re-run.
 
 Two locations are involved and they're easy to mix up:
 
@@ -37,6 +50,22 @@ Two locations are involved and they're easy to mix up:
 | `~/.bloxcue/knowledge/` | Your markdown blocks + a copy of `indexer.py` | The indexer ships with the data so it can read/write its index alongside the blocks |
 
 The installer creates the knowledge folder, copies `indexer.py` into it, and prints MCP setup instructions. It does not install or enable Claude Code hooks unless `--claude-hook` is passed.
+
+## Upgrading from v2
+
+If you used BloxCue v2, you have `~/.claude-memory/` with your existing markdown blocks. v3 keeps that directory readable — no migration needed.
+
+```bash
+cd ~/bloxcue && git pull origin main
+./install.sh --auto
+```
+
+After upgrade:
+
+- Existing markdown blocks under `~/.claude-memory/` are auto-indexed alongside `~/.bloxcue/knowledge/`. They appear in search results with `legacy://claude-memory/` virtual paths.
+- If you used the v2 PostgreSQL runtime integration, set `BLOXCUE_DATABASE_URL` and run `./scripts/indexer.py --import-postgres` once to copy `archival_memory` rows into SQLite. After that, you don't need a running Postgres anymore.
+- The shell hook (`hooks/memory-retrieve.sh`) is now a 5-line shim that exec's the new Python adapter. If you previously enabled it, it keeps working.
+- Claude Code auto-injection is no longer wired by default. Re-run with `./install.sh --claude-hook` if you want it.
 
 ## What Changed In v3
 
