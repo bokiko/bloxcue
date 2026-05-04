@@ -24,6 +24,7 @@ import sys
 import json
 import os
 from pathlib import Path
+from typing import Optional
 
 # Add scripts dir to path so we can import indexer
 SCRIPT_DIR = Path(__file__).parent
@@ -328,7 +329,7 @@ def make_error(id, code, message, data=None):
     return {"jsonrpc": "2.0", "id": id, "error": error}
 
 
-def handle_message(message: dict) -> dict | None:
+def handle_message(message: dict) -> Optional[dict]:
     """Handle a single JSON-RPC message. Returns response dict or None for notifications."""
     method = message.get("method", "")
     msg_id = message.get("id")
