@@ -1,18 +1,24 @@
 # BloxCue
 
+<p align="center">
+  <img src="bloxcue-v2.png" alt="BloxCue — local context retrieval for AI coding tools" width="600" />
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT" /></a>
+  <img src="https://img.shields.io/badge/python-3.8+-blue?style=flat-square" alt="Python 3.8+" />
+  <img src="https://img.shields.io/badge/MCP-stdio-blueviolet?style=flat-square" alt="MCP" />
+</p>
+
 BloxCue is a standalone local context retrieval layer for AI coding tools. It indexes small markdown knowledge blocks and learned memory, then exposes search and context injection through MCP.
 
 BloxCue v3 is MCP-first for Claude, Codex, Gemini, Cursor, Windsurf, and generic MCP clients. Claude Code hooks are an optional adapter. Continuous-Claude and PostgreSQL are legacy import sources, not required runtime services.
 
-## What Changed In v3
+## Why BloxCue?
 
-- New default knowledge path: `~/.bloxcue/knowledge`
-- Existing `~/.claude-memory` directories remain readable for compatibility
-- Learned memory is stored in BloxCue-owned SQLite at `~/.bloxcue/learnings.db`
-- Learned memory records use virtual paths like `memory://learning/1`
-- Legacy PostgreSQL records can be imported once from Continuous-Claude `archival_memory`
-- Claude Code prompt hooks use `hooks/memory-retrieve.py`; the shell hook is only a compatibility shim
-- Installer defaults to client-agnostic setup instructions and does not mutate client config unless explicitly requested
+A `CLAUDE.md` (or any always-loaded system prompt) gets reloaded on every turn. A 30 KB file becomes hundreds of thousands of wasted tokens per session. BloxCue moves that knowledge into ranked, on-demand markdown blocks: BM25 + IDF + stemming, with token-budgeted injection. Your assistant gets the deployment guide when you ask about deployments, not on every prompt about anything.
+
+The same engine indexes locally-captured "learned memory" (decisions, fixes, patterns) and exposes both through one MCP server, so it works the same way in Claude Code, Codex, Gemini CLI, Cursor, and Windsurf.
 
 ## Quick Start
 
@@ -23,7 +29,24 @@ cd ~/bloxcue
 python3 ~/.bloxcue/knowledge/scripts/indexer.py --search "getting started"
 ```
 
-The installer creates knowledge folders and copies the indexer. It prints MCP setup instructions. It does not install or enable Claude Code hooks unless `--claude-hook` is passed.
+Two locations are involved and they're easy to mix up:
+
+| Path | Contains | Why it lives there |
+|------|----------|--------------------|
+| `~/bloxcue/` | The cloned source repo | Where `mcp_server.py` runs from — one canonical install per machine |
+| `~/.bloxcue/knowledge/` | Your markdown blocks + a copy of `indexer.py` | The indexer ships with the data so it can read/write its index alongside the blocks |
+
+The installer creates the knowledge folder, copies `indexer.py` into it, and prints MCP setup instructions. It does not install or enable Claude Code hooks unless `--claude-hook` is passed.
+
+## What Changed In v3
+
+- New default knowledge path: `~/.bloxcue/knowledge`
+- Existing `~/.claude-memory` directories remain readable for compatibility
+- Learned memory is stored in BloxCue-owned SQLite at `~/.bloxcue/learnings.db`
+- Learned memory records use virtual paths like `memory://learning/1`
+- Legacy PostgreSQL records can be imported once from Continuous-Claude `archival_memory`
+- Claude Code prompt hooks use `hooks/memory-retrieve.py`; the shell hook is only a compatibility shim
+- Installer defaults to client-agnostic setup instructions and does not mutate client config unless explicitly requested
 
 ## MCP Setup
 
@@ -143,15 +166,6 @@ python3 ~/.bloxcue/knowledge/scripts/indexer.py --list-learnings
 | `BLOXCUE_ENABLE_LEGACY_PG_RUNTIME` | `0` | Temporary compatibility switch for old live PG indexing |
 
 `BLOXCUE_PG_ENABLED` from v2 no longer enables runtime PostgreSQL merging. Use `--import-postgres` for migration; temporary live compatibility requires `BLOXCUE_ENABLE_LEGACY_PG_RUNTIME=1`.
-
-## Verification
-
-Current test discovery should be checked with:
-
-```bash
-python3 -m pytest -q
-python3 -m py_compile scripts/*.py hooks/*.py
-```
 
 ## Security
 
