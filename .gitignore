@@ -1,6 +1,13 @@
 # Index cache
 scripts/.index.json
+scripts/.usage.jsonl
 scripts/.cache/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+bloxcue-knowledge/
+claude-memory/
+.bloxcue/
 
 # OS files
 .DS_Store
