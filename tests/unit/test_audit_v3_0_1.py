@@ -12,6 +12,7 @@ Findings:
 import importlib
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -251,3 +252,39 @@ def test_fcntl_no_longer_imported():
     assert not re.search(r"^\s*from\s+fcntl\b", indexer_source, re.MULTILINE), (
         "indexer.py still uses 'from fcntl' import"
     )
+
+
+# ============================================================
+# Finding 4: Hook resilience to bad env vars
+# ============================================================
+
+def test_hook_with_bad_env_emits_continue(tmp_path):
+    """memory-retrieve.py must emit valid JSON {"result": "continue"} even with bad env values."""
+    hook = HOOKS_DIR / "memory-retrieve.py"
+    assert hook.exists(), f"hook not found at {hook}"
+
+    env = os.environ.copy()
+    env["BLOXCUE_HOOK_MAX_RESULTS"] = "bad"
+    env["BLOXCUE_HOOK_MAX_CONTEXT_CHARS"] = "garbage"
+    env["BLOXCUE_HOOK_MIN_QUERY_LENGTH"] = "not-an-int"
+    # Point at an empty memory dir so the hook doesn't try to do real work
+    empty_dir = tmp_path / "empty_knowledge"
+    empty_dir.mkdir()
+    env["BLOXCUE_MEMORY_DIR"] = str(empty_dir)
+
+    payload = json.dumps({"user_prompt": "hello world test query about indexing"})
+    proc = subprocess.run(
+        [sys.executable, str(hook)],
+        input=payload,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=15,
+    )
+
+    assert proc.returncode == 0, (
+        f"Hook exited non-zero with bad env vars. stderr={proc.stderr!r}, stdout={proc.stdout!r}"
+    )
+    # stdout must be parseable JSON with result=continue
+    output = json.loads(proc.stdout.strip())
+    assert output.get("result") == "continue", f"Expected continue, got {output}"

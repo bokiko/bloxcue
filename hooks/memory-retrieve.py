@@ -15,9 +15,25 @@ from pathlib import Path
 
 
 MEMORY_PATH = Path(os.environ.get("BLOXCUE_MEMORY_DIR", str(Path.home() / ".bloxcue" / "knowledge"))).expanduser()
-MAX_RESULTS = int(os.environ.get("BLOXCUE_HOOK_MAX_RESULTS", "3"))
-MAX_CONTEXT_CHARS = int(os.environ.get("BLOXCUE_HOOK_MAX_CONTEXT_CHARS", "3000"))
-MIN_QUERY_LENGTH = int(os.environ.get("BLOXCUE_HOOK_MIN_QUERY_LENGTH", "5"))
+
+
+def _safe_int(name: str, default: int) -> int:
+    """Parse an env var as int, falling back to default on garbage values.
+
+    v3.0.1: previously a malformed BLOXCUE_HOOK_* env var would raise
+    ValueError at module import, before main() could emit the JSON
+    payload Claude Code expects. Mirrors the safe-parse pattern the
+    indexer already uses for BLOXCUE_MAX_TOKENS.
+    """
+    try:
+        return int(os.environ.get(name, str(default)))
+    except (ValueError, TypeError):
+        return default
+
+
+MAX_RESULTS = _safe_int("BLOXCUE_HOOK_MAX_RESULTS", 3)
+MAX_CONTEXT_CHARS = _safe_int("BLOXCUE_HOOK_MAX_CONTEXT_CHARS", 3000)
+MIN_QUERY_LENGTH = _safe_int("BLOXCUE_HOOK_MIN_QUERY_LENGTH", 5)
 
 
 def emit(message=None):
