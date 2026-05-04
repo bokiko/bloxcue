@@ -52,8 +52,18 @@ def default_memory_dir() -> Path:
 
 
 MEMORY_DIR = Path(os.environ.get("BLOXCUE_MEMORY_DIR", str(default_memory_dir()))).expanduser()
-INDEX_FILE = SCRIPT_DIR / ".index.json"
-USAGE_FILE = SCRIPT_DIR / ".usage.jsonl"
+
+# v3.0.1: runtime state lives under MEMORY_DIR so the MCP server (repo copy)
+# and the installed CLI copy share the same index when they share
+# BLOXCUE_MEMORY_DIR. The old SCRIPT_DIR-based defaults caused MCP and CLI
+# to write to different .index.json files and silently diverge.
+_DEFAULT_STATE_DIR = MEMORY_DIR / ".bloxcue"
+INDEX_FILE = Path(
+    os.environ.get("BLOXCUE_INDEX_FILE", str(_DEFAULT_STATE_DIR / "index.json"))
+).expanduser()
+USAGE_FILE = Path(
+    os.environ.get("BLOXCUE_USAGE_FILE", str(_DEFAULT_STATE_DIR / "usage.jsonl"))
+).expanduser()
 LEARNINGS_DB = Path(os.environ.get("BLOXCUE_LEARNINGS_DB", str(Path.home() / ".bloxcue" / "learnings.db"))).expanduser()
 try:
     MAX_INJECT_TOKENS = int(os.environ.get("BLOXCUE_MAX_TOKENS", "3000"))

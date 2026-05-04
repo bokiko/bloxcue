@@ -40,7 +40,10 @@ def test_usage_file_defined():
 
 
 def test_usage_file_is_jsonl():
-    assert str(indexer.USAGE_FILE).endswith(".usage.jsonl"), "usage_file_is_jsonl"
+    # v3.0.1: usage log moved from <SCRIPT_DIR>/.usage.jsonl to
+    # <MEMORY_DIR>/.bloxcue/usage.jsonl. The .bloxcue parent dir is
+    # already hidden so the file itself no longer needs a dotfile prefix.
+    assert str(indexer.USAGE_FILE).endswith("usage.jsonl"), "usage_file_is_jsonl"
 
 
 def test_log_usage_writes_records():
