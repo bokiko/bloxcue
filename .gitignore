@@ -1,13 +1,15 @@
-# Index cache
-scripts/.index.json
-scripts/.usage.jsonl
-scripts/.cache/
+# Runtime caches and state
+.bloxcue/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+
+# Project-scope knowledge dirs (created by ./install.sh in scope 2/3)
 bloxcue-knowledge/
 claude-memory/
-.bloxcue/
+
+# Agent caches (kraken/codex/etc)
+.claude/cache/
 
 # OS files
 .DS_Store
