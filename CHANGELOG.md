@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.0.0 — 2026-05-04
 
 - Reposition BloxCue as a standalone MCP-first local context retrieval layer for Claude, Codex, Gemini, Cursor, Windsurf, and generic MCP clients.
 - Change the default knowledge path from `~/.claude-memory` to `~/.bloxcue/knowledge`.
