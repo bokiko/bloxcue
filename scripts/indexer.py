@@ -18,7 +18,6 @@ import sys
 import json
 import re
 import argparse
-import fcntl
 import sqlite3
 from pathlib import Path
 from datetime import datetime
@@ -52,8 +51,18 @@ def default_memory_dir() -> Path:
 
 
 MEMORY_DIR = Path(os.environ.get("BLOXCUE_MEMORY_DIR", str(default_memory_dir()))).expanduser()
-INDEX_FILE = SCRIPT_DIR / ".index.json"
-USAGE_FILE = SCRIPT_DIR / ".usage.jsonl"
+
+# v3.0.1: runtime state lives under MEMORY_DIR so the MCP server (repo copy)
+# and the installed CLI copy share the same index when they share
+# BLOXCUE_MEMORY_DIR. The old SCRIPT_DIR-based defaults caused MCP and CLI
+# to write to different .index.json files and silently diverge.
+_DEFAULT_STATE_DIR = MEMORY_DIR / ".bloxcue"
+INDEX_FILE = Path(
+    os.environ.get("BLOXCUE_INDEX_FILE", str(_DEFAULT_STATE_DIR / "index.json"))
+).expanduser()
+USAGE_FILE = Path(
+    os.environ.get("BLOXCUE_USAGE_FILE", str(_DEFAULT_STATE_DIR / "usage.jsonl"))
+).expanduser()
 LEARNINGS_DB = Path(os.environ.get("BLOXCUE_LEARNINGS_DB", str(Path.home() / ".bloxcue" / "learnings.db"))).expanduser()
 try:
     MAX_INJECT_TOKENS = int(os.environ.get("BLOXCUE_MAX_TOKENS", "3000"))
@@ -552,17 +561,19 @@ def extract_bigrams(content: str, frontmatter: Dict) -> List[str]:
 
 def write_index_safely(index_path: Path, data: Dict) -> None:
     """
-    Write index with exclusive file locking for concurrent safety.
+    Write index atomically via temp-file + os.replace().
 
-    Prevents index corruption when multiple sessions write simultaneously.
-    Uses fcntl.LOCK_EX for exclusive lock during write.
+    v3.0.1: the previous fcntl-based version opened the destination in
+    ``'w'`` mode (truncating the file) *before* acquiring the exclusive
+    lock, so two concurrent writers could both truncate. Atomic rename
+    fixes the race and is portable across POSIX and Windows, removing
+    the fcntl dependency that prevented Windows support.
     """
-    with open(index_path, 'w') as f:
-        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-        try:
-            json.dump(data, f, indent=2)
-        finally:
-            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    index_path = Path(index_path)
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = index_path.with_suffix(index_path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.replace(str(tmp), str(index_path))
 
 
 def knowledge_dirs() -> List[Path]:
@@ -706,8 +717,41 @@ def get_learning_content(learning_id: str) -> str:
 
 
 def index_file(filepath: Path, base_dir: Optional[Path] = None) -> Optional[Dict]:
-    """Index a single markdown file."""
+    """Index a single markdown file.
+
+    Security (v3.0.1): resolve the real path and reject anything that lands
+    outside an allowed knowledge root. This prevents a symlink inside
+    MEMORY_DIR (e.g. ~/.bloxcue/knowledge/leak.md -> /etc/passwd) from
+    leaking external file content into index previews. Symlinks pointing
+    at files inside the memory dirs remain legitimate and are allowed.
+    """
     try:
+        # Resolve symlinks before deciding whether the file is in scope.
+        try:
+            resolved = filepath.resolve()
+        except (OSError, RuntimeError):
+            return None
+
+        allowed_roots = []
+        for d in knowledge_dirs():
+            try:
+                allowed_roots.append(d.resolve())
+            except (OSError, RuntimeError):
+                continue
+
+        # Use the os.sep suffix trick (mirrors get_file_content) so a
+        # sibling like /a/.bloxcue-evil cannot satisfy a /a/.bloxcue base.
+        in_allowed = any(
+            str(resolved) == str(root) or str(resolved).startswith(str(root) + os.sep)
+            for root in allowed_roots
+        )
+        if not in_allowed:
+            print(
+                f"Skipping symlink outside memory root: {filepath}",
+                file=sys.stderr,
+            )
+            return None
+
         content = filepath.read_text(encoding="utf-8")
         frontmatter, body = parse_frontmatter(content)
 
