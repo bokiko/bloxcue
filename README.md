@@ -1,7 +1,7 @@
 # BloxCue
 
 <p align="center">
-  <img src="bloxcue-v2.png" alt="BloxCue — local context retrieval for AI coding tools" width="600" />
+  <img src="assets/bloxcue-v3.jpg" alt="BloxCue — local context retrieval for AI coding tools" width="600" />
 </p>
 
 <p align="center">
@@ -19,6 +19,42 @@ BloxCue v3 is MCP-first for Claude, Codex, Gemini, Cursor, Windsurf, and generic
 A `CLAUDE.md` (or any always-loaded system prompt) gets reloaded on every turn. A 30 KB file becomes hundreds of thousands of wasted tokens per session. BloxCue moves that knowledge into ranked, on-demand markdown blocks: BM25 + IDF + stemming, with token-budgeted injection. Your assistant gets the deployment guide when you ask about deployments, not on every prompt about anything.
 
 The same engine indexes locally-captured "learned memory" (decisions, fixes, patterns) and exposes both through one MCP server, so it works the same way in Claude Code, Codex, Gemini CLI, Cursor, and Windsurf.
+
+## Do Claude and Codex share memory?
+
+**Short answer: yes for knowledge, no for chat.**
+
+Think of BloxCue as a **shared filing cabinet** sitting on your machine. Claude reaches into it. Codex reaches into it. So does Cursor, Windsurf, and any other MCP client you point at the same setup. They all read and write the same files.
+
+What's in the cabinet:
+
+- Your markdown notes under `~/.bloxcue/knowledge/`
+- Your saved learnings inside `~/.bloxcue/learnings.db`
+- Your old `~/.claude-memory/` blocks if you have them
+
+What's **not** in the cabinet:
+
+- Your conversations. Claude doesn't see what you said to Codex. Codex doesn't see what you said to Claude. Each chat is private to that tool.
+
+### What this means in practice
+
+| Scenario | Does it work? |
+|---|---|
+| You write a note in `~/.bloxcue/knowledge/guides/deploy.md`. Both Claude and Codex find it on their next search. | ✅ Automatic. |
+| You tell Claude *"save a learning that we picked Postgres for X."* Later you ask Codex *"what did we pick for X?"* | ✅ Works after one re-index — ask either tool to call `index_blocks` to refresh. |
+| You're mid-debug in Claude. You switch to Codex and want it to continue right where you left off. | ❌ Doesn't work. Codex starts fresh. Either save a learning summarizing where you are, or just brief Codex manually. |
+
+### The handoff trick
+
+If you want Codex to pick up where Claude left off, end your Claude session with something like:
+
+> *"Save a learning titled 'Investigating X — current state'. Body: hypothesis is Y, next step is Z, ruled out W."*
+
+Then in Codex:
+
+> *"Search bloxcue for 'investigating X' and tell me what you find."*
+
+Not real-time, not automatic, but it works for any pair of tools that talk to BloxCue.
 
 ## Quick Start
 
