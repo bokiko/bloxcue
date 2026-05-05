@@ -179,7 +179,7 @@ echo ""
 if [ "$AUTO_MODE" = "1" ]; then
     SCOPE_CHOICE=${SCOPE_ARG:-3}
 else
-    read -p "Choose [1/2/3] (default: 3): " SCOPE_CHOICE
+    read -r -p "Choose [1/2/3] (default: 3): " SCOPE_CHOICE
     SCOPE_CHOICE=${SCOPE_CHOICE:-3}
 fi
 
@@ -219,7 +219,7 @@ echo ""
 if [ "$AUTO_MODE" = "1" ]; then
     STRUCTURE_CHOICE=${STRUCTURE_ARG:-1}
 else
-    read -p "Choose [1-6] (default: 1): " STRUCTURE_CHOICE
+    read -r -p "Choose [1-6] (default: 1): " STRUCTURE_CHOICE
     STRUCTURE_CHOICE=${STRUCTURE_CHOICE:-1}
 fi
 
@@ -232,7 +232,7 @@ case $STRUCTURE_CHOICE in
         if [ "$AUTO_MODE" = "1" ]; then
             PROJECTS="project-a,project-b"
         else
-            read -p "Enter project/client names (comma-separated): " PROJECTS
+            read -r -p "Enter project/client names (comma-separated): " PROJECTS
             if [ -z "$PROJECTS" ]; then
                 PROJECTS="project-a,project-b"
             fi
@@ -259,7 +259,7 @@ case $STRUCTURE_CHOICE in
             CUSTOM_FOLDERS="docs,notes"
         else
             echo "Examples: guides, projects, apis, clients, notes"
-            read -p "Enter folder names (comma-separated): " CUSTOM_FOLDERS
+            read -r -p "Enter folder names (comma-separated): " CUSTOM_FOLDERS
         fi
         if [ -z "$CUSTOM_FOLDERS" ]; then
             CUSTOM_FOLDERS="docs,notes"
@@ -298,7 +298,7 @@ echo ""
 if [ "$AUTO_MODE" = "1" ]; then
     CONFIRM="Y"
 else
-    read -p "Proceed? [Y/n]: " CONFIRM
+    read -r -p "Proceed? [Y/n]: " CONFIRM
     CONFIRM=${CONFIRM:-Y}
 fi
 

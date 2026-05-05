@@ -10,6 +10,7 @@ Findings:
 """
 
 import importlib
+import ast
 import json
 import os
 import subprocess
@@ -288,3 +289,16 @@ def test_hook_with_bad_env_emits_continue(tmp_path):
     # stdout must be parseable JSON with result=continue
     output = json.loads(proc.stdout.strip())
     assert output.get("result") == "continue", f"Expected continue, got {output}"
+
+
+def test_shipped_python_files_parse_as_python38():
+    """Docs promise Python 3.8+, so shipped scripts/hooks must avoid 3.9+ syntax."""
+    files = sorted(SCRIPTS_DIR.glob("*.py")) + sorted(HOOKS_DIR.glob("*.py"))
+    failures = []
+    for path in files:
+        try:
+            ast.parse(path.read_text(encoding="utf-8"), filename=str(path), feature_version=(3, 8))
+        except SyntaxError as exc:
+            failures.append(f"{path.relative_to(PROJECT_ROOT)}:{exc.lineno}: {exc.msg}")
+
+    assert not failures, "Python 3.8 syntax failures:\n" + "\n".join(failures)
