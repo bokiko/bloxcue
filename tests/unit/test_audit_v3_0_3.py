@@ -126,7 +126,29 @@ def _reload_indexer():
     return sys.modules["indexer"]
 
 
-def test_import_postgres_is_idempotent(tmp_path, monkeypatch):
+@pytest.fixture
+def reloadable_indexer():
+    """Same teardown-safe pattern as test_audit_v3_0_1's fixture: capture
+    env at entry, restore at exit, then reload the module so subsequent
+    tests see the baseline (conftest) module state, not our tmp paths.
+    """
+    keys = (
+        "BLOXCUE_MEMORY_DIR",
+        "BLOXCUE_LEARNINGS_DB",
+        "BLOXCUE_INDEX_FILE",
+        "BLOXCUE_USAGE_FILE",
+    )
+    saved = {k: os.environ.get(k) for k in keys}
+    yield _reload_indexer
+    for k, v in saved.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+    _reload_indexer()
+
+
+def test_import_postgres_is_idempotent(tmp_path, monkeypatch, reloadable_indexer):
     """Running --import-postgres twice with the same source must not duplicate rows."""
     memory_dir = tmp_path / "knowledge"
     memory_dir.mkdir()
@@ -137,7 +159,7 @@ def test_import_postgres_is_idempotent(tmp_path, monkeypatch):
     monkeypatch.setenv("BLOXCUE_INDEX_FILE", str(tmp_path / "index.json"))
     monkeypatch.setenv("BLOXCUE_USAGE_FILE", str(tmp_path / "usage.jsonl"))
 
-    indexer = _reload_indexer()
+    indexer = reloadable_indexer()
 
     # Fixture: 3 fake "PG" learnings, each with a stable id so legacy_path is
     # deterministic across runs
@@ -219,7 +241,7 @@ def test_search_json_output_is_clean_on_first_run(tmp_path):
     assert isinstance(payload, list)
 
 
-def test_import_postgres_skips_empty_content(tmp_path, monkeypatch):
+def test_import_postgres_skips_empty_content(tmp_path, monkeypatch, reloadable_indexer):
     """Empty/whitespace content must not produce a row, but must not crash either."""
     monkeypatch.setenv("BLOXCUE_MEMORY_DIR", str(tmp_path / "knowledge"))
     (tmp_path / "knowledge").mkdir()
@@ -227,7 +249,7 @@ def test_import_postgres_skips_empty_content(tmp_path, monkeypatch):
     monkeypatch.setenv("BLOXCUE_INDEX_FILE", str(tmp_path / "index.json"))
     monkeypatch.setenv("BLOXCUE_USAGE_FILE", str(tmp_path / "usage.jsonl"))
 
-    indexer = _reload_indexer()
+    indexer = reloadable_indexer()
 
     fake_rows = [
         {"id": "empty", "content": "", "metadata": {}},
