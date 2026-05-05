@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.3 — 2026-05-05
+
+Audit closure release. Closes the last two outstanding low-severity findings from the May 2026 external audit, plus a third bug surfaced by the new tests. **Every finding from the audit (8 total + 1 bonus) is now fixed.**
+
+- **Fix (low, audit L-2)**: Clamp CLI `--limit` to `[1, 100]` to mirror the MCP server cap. Previously `python3 indexer.py --search foo --limit -5` produced odd Python slicing behavior and `--limit 999999` loaded all results without bound.
+- **Fix (low, audit L-3)**: `--import-postgres` is now idempotent. `import_postgres_learnings()` checks each row's `legacy_path` against the local SQLite before inserting and skips duplicates. Re-running the import (e.g. after a network blip mid-run, or by mistake) no longer creates duplicate SQLite rows. Skipped count is reported on stderr.
+- **Fix (bonus)**: Route `build_index()`'s `Indexed: <path>` progress lines to stderr instead of stdout. Subprocess consumers expecting clean JSON on stdout (notably `hooks/memory-retrieve.py` invoking `--search ... --json`) had their `json.loads` broken on machines with a populated `~/.claude-memory/` legacy dir. Symptom was a flaky `test_successful_valid_hook_json_output`. The bug masked itself in CI but surfaced on real installs.
+- **Test**: New `tests/unit/test_audit_v3_0_3.py` adds 6 regression tests covering all three fixes. 213 → 219 passing on `main`.
+- **Test infra**: New `reloadable_indexer` fixture pattern (mirroring `test_audit_v3_0_1.py`) — captures env at fixture entry, restores at teardown, then reloads the indexer module so subsequent tests see the conftest baseline instead of polluted module-level constants.
+
 ## 3.0.2 — 2026-05-05
 
 Polish release. Closes 2 of the 3 deferred low-severity audit findings from v3.0.1, plus a real Python 3.8 compat bug missed in that audit, plus docs/repo hygiene. No behavior change to the search or MCP path.
