@@ -815,7 +815,12 @@ def build_index(single_file: Optional[Path] = None) -> Dict:
             entry = index_file(filepath, root)
             if entry:
                 index["files"].append(entry)
-                print(f"Indexed: {entry['path']}")
+                # v3.0.3: route progress to stderr so subprocess JSON consumers
+                # (e.g. hooks/memory-retrieve.py invoking `--search ... --json`)
+                # get clean JSON on stdout. Previously a non-empty
+                # ~/.claude-memory legacy dir would emit dozens of "Indexed:"
+                # lines on stdout that broke the hook's json.loads.
+                print(f"Indexed: {entry['path']}", file=sys.stderr)
 
     # Merge BloxCue-owned SQLite learnings.
     sqlite_count = 0
@@ -1650,7 +1655,14 @@ def inject_context(query: str, limit: int = 5, max_tokens: Optional[int] = None)
 
 
 def import_postgres_learnings(url: str, limit: int = 500) -> int:
-    """Import legacy Continuous-Claude archival_memory rows into SQLite."""
+    """Import legacy Continuous-Claude archival_memory rows into SQLite.
+
+    Audit L-3 (v3.0.3): idempotent. Rows whose ``legacy_path`` already
+    exists in the local SQLite are skipped. Re-running the import after a
+    partial run, or by mistake, does not create duplicates. Returns the
+    number of *newly* imported rows; skipped duplicates are reported on
+    stderr.
+    """
     if not HAS_PG_PROVIDER:
         raise RuntimeError("pg_provider is unavailable")
     if not url:
@@ -1658,21 +1670,48 @@ def import_postgres_learnings(url: str, limit: int = 500) -> int:
     if not pg_is_available(url):
         raise RuntimeError("PostgreSQL is not reachable")
 
+    ensure_learnings_db()
+
     count = 0
-    for learning in pg_fetch_learnings(url, limit=limit):
-        content = learning.get("content", "")
-        metadata = learning.get("metadata", {}) if isinstance(learning.get("metadata"), dict) else {}
-        learning_type = metadata.get("learning_type", "learning")
-        context = metadata.get("context", "")
-        title = learning_type.replace("_", " ").title()
-        if context:
-            title = f"{title}: {context[:80]}"
-        tags = metadata.get("tags", [])
-        if not isinstance(tags, list):
-            tags = []
-        legacy_path = f"pg://learning/{learning.get('id', '')}"
-        add_learning(content, title=title, tags=tags, source="postgres-import", legacy_path=legacy_path)
-        count += 1
+    skipped = 0
+    with sqlite3.connect(LEARNINGS_DB) as conn:
+        for learning in pg_fetch_learnings(url, limit=limit):
+            content = learning.get("content", "")
+            if not content or not content.strip():
+                continue
+            legacy_path = f"pg://learning/{learning.get('id', '')}"
+
+            existing = conn.execute(
+                "SELECT 1 FROM learnings WHERE legacy_path = ? LIMIT 1",
+                (legacy_path,),
+            ).fetchone()
+            if existing:
+                skipped += 1
+                continue
+
+            metadata = learning.get("metadata", {}) if isinstance(learning.get("metadata"), dict) else {}
+            learning_type = metadata.get("learning_type", "learning")
+            context = metadata.get("context", "")
+            title = learning_type.replace("_", " ").title()
+            if context:
+                title = f"{title}: {context[:80]}"
+            tags = metadata.get("tags", [])
+            if not isinstance(tags, list):
+                tags = []
+
+            now = datetime.now().isoformat()
+            conn.execute(
+                """
+                INSERT INTO learnings (content, title, tags, source, legacy_path, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (content.strip(), title.strip(), json.dumps(tags), "postgres-import", legacy_path, now, now),
+            )
+            count += 1
+        conn.commit()
+
+    if skipped:
+        print(f"Skipped {skipped} previously-imported learning(s)", file=sys.stderr)
     return count
 
 
@@ -1789,6 +1828,13 @@ def main():
         list_files()
 
     elif args.search:
+        # Audit L-2 (v3.0.3): clamp --limit to [1, 100] to match the MCP
+        # server cap. Negative or huge values previously produced odd
+        # slicing behavior or excessive resource use.
+        if not isinstance(args.limit, int) or args.limit < 1:
+            args.limit = 5
+        else:
+            args.limit = min(args.limit, 100)
         results = search(args.search, limit=args.limit)
 
         if args.json:
